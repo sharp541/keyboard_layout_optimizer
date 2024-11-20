@@ -23,6 +23,7 @@ impl<const N: usize> Display for PhysicalNGram<N> {
     }
 }
 
+#[derive(Debug)]
 pub struct LogicalNGram<const N: usize>([char; N]);
 
 impl<const N: usize> LogicalNGram<N> {
@@ -47,7 +48,7 @@ impl<const N: usize> Display for LogicalNGram<N> {
 
 pub fn generate_n_grams<const N: usize>(text: &str) -> Vec<LogicalNGram<N>> {
     let mut n_grams = Vec::new();
-    for i in 0..text.len() - N {
+    for i in 0..text.len() - N + 1 {
         let n_gram: [char; N] = text[i..i + N]
             .chars()
             .collect::<Vec<char>>()
@@ -97,12 +98,15 @@ mod tests {
     #[test]
     fn test_generate_n_grams() {
         let n_grams = generate_n_grams::<3>("abcde");
-        assert_eq!(n_grams.len(), 2);
+        assert_eq!(n_grams.len(), 3);
         assert_eq!(n_grams[0].get(0), 'a');
         assert_eq!(n_grams[0].get(1), 'b');
         assert_eq!(n_grams[0].get(2), 'c');
         assert_eq!(n_grams[1].get(0), 'b');
         assert_eq!(n_grams[1].get(1), 'c');
         assert_eq!(n_grams[1].get(2), 'd');
+        assert_eq!(n_grams[2].get(0), 'c');
+        assert_eq!(n_grams[2].get(1), 'd');
+        assert_eq!(n_grams[2].get(2), 'e');
     }
 }

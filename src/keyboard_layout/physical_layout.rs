@@ -1,28 +1,20 @@
+pub const NUM_ROWS: usize = 3;
+pub const NUM_COLS: usize = 10;
+
 use crate::n_gram::PhysicalNGram;
 
 #[derive(Debug)]
 pub struct PhysicalLayout {
-    cost_matrix: Vec<Vec<f32>>,
-    mapping: Vec<(usize, usize)>,
+    cost_matrix: [[f32; NUM_COLS]; NUM_ROWS],
+    mapping: [(usize, usize); NUM_COLS * NUM_ROWS],
 }
 
 impl PhysicalLayout {
-    pub fn new(cost_matrix: Vec<Vec<f32>>) -> Result<Self, &'static str> {
-        if cost_matrix.is_empty() {
-            return Err("Matrix cannot be empty");
-        }
-
-        let row_length = cost_matrix[0].len();
-        for row in &cost_matrix {
-            if row.len() != row_length {
-                return Err("All rows must have the same length");
-            }
-        }
-
-        let mut mapping = Vec::new();
-        for (i, row) in cost_matrix.iter().enumerate() {
-            for (j, _) in row.iter().enumerate() {
-                mapping.push((i, j));
+    pub fn new(cost_matrix: [[f32; NUM_COLS]; NUM_ROWS]) -> Result<Self, &'static str> {
+        let mut mapping = [(0, 0); NUM_COLS * NUM_ROWS];
+        for i in 0..NUM_ROWS {
+            for j in 0..NUM_COLS {
+                mapping[i * NUM_COLS + j] = (i, j);
             }
         }
 
@@ -57,12 +49,20 @@ impl PhysicalLayout {
     pub fn print(&self, layout: Vec<Option<char>>) {
         for (i, row) in layout.chunks(self.cost_matrix[0].len()).enumerate() {
             for (j, key) in row.iter().enumerate() {
+                if j == NUM_COLS / 2 {
+                    print!("| ");
+                }
                 match key {
                     Some(c) => print!("{} ", c),
                     None => print!("  "),
                 }
                 if (i + 1) * (j + 1) == self.cost_matrix[0].len() * self.cost_matrix.len() {
-                    println!("\n-------------------");
+                    println!("\n");
+                    std::iter::repeat("--")
+                        .take(self.cost_matrix[0].len() + 1)
+                        .for_each(|c| {
+                            print!("{}", c);
+                        });
                 }
             }
             println!();
@@ -76,15 +76,13 @@ mod tests {
 
     #[test]
     fn test_physical_layout() {
-        let cost_matrix = vec![
-            vec![0.0, 1.0, 2.0],
-            vec![1.0, 0.0, 3.0],
-            vec![2.0, 3.0, 0.0],
+        let cost_matrix: [[f32; NUM_COLS]; NUM_ROWS] = [
+            [3.0, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.0], // 上段
+            [1.6, 1.3, 1.1, 1.0, 2.9, 2.9, 1.0, 1.1, 1.3, 1.6], // 中段（ホームポジション）
+            [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 2.6, 3.2], // 下段
         ];
         let physical_layout = PhysicalLayout::new(cost_matrix).unwrap();
-        assert_eq!(physical_layout.cost(PhysicalNGram::new([0, 1, 2])), 3.0);
-        assert_eq!(physical_layout.cost(PhysicalNGram::new([3, 4, 5])), 4.0);
-        assert_eq!(physical_layout.cost(PhysicalNGram::new([6, 7, 8])), 5.0);
-        assert_eq!(physical_layout.cost(PhysicalNGram::new([9, 10, 11])), 30.0);
+        assert_eq!(physical_layout.cost(PhysicalNGram::new([0, 1, 2])), 7.4);
+        assert_eq!(physical_layout.cost(PhysicalNGram::new([48, 49, 50])), 30.0);
     }
 }

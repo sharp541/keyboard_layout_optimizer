@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::iter;
 
 use super::physical_layout::PhysicalLayout;
-use crate::n_gram::{generate_n_grams, PhysicalNGram};
+use crate::n_gram::{LogicalNGram, PhysicalNGram};
 
 #[derive(Debug)]
 pub struct LogicalLayout<'a> {
@@ -32,22 +32,18 @@ impl<'a> LogicalLayout<'a> {
         }
     }
 
-    pub fn evaluate<const N: usize>(&self, text: &str) -> f32 {
-        let mut cost = 0.0;
-        generate_n_grams::<N>(text).iter().for_each(|n_gram| {
-            let mut physical_n_gram = PhysicalNGram::new([0; N]);
-            for i in 0..N {
-                let key = &n_gram.get(i);
-                match self.usable_chars.get(key) {
-                    Some(idx) => {
-                        physical_n_gram.set(i, *idx);
-                    }
-                    None => physical_n_gram.set(i, self.usable_chars.len()),
-                };
-            }
-            cost += self.physical_layout.cost(physical_n_gram);
-        });
-        cost
+    pub fn evaluate<const N: usize>(&self, n_gram: &LogicalNGram<N>) -> f32 {
+        let mut physical_n_gram = PhysicalNGram::new([0; N]);
+        for i in 0..N {
+            let key = &n_gram.get(i);
+            match self.usable_chars.get(key) {
+                Some(idx) => {
+                    physical_n_gram.set(i, *idx);
+                }
+                None => physical_n_gram.set(i, self.usable_chars.len()),
+            };
+        }
+        self.physical_layout.cost(physical_n_gram)
     }
 
     pub fn swap(&mut self, a: usize, b: usize) {
@@ -91,11 +87,14 @@ mod tests {
         ];
         let physical_layout = PhysicalLayout::new(cost_matrix).unwrap();
         let mut logical_layout = LogicalLayout::new(&physical_layout, vec!['a', 'b', 'c']);
-        assert_eq!(logical_layout.len(), 48);
+        assert_eq!(logical_layout.len(), 30);
         assert_eq!(logical_layout.usable_chars().len(), 3);
-        assert_eq!(logical_layout.evaluate::<1>("abc"), 7.4);
-        assert_eq!(logical_layout.evaluate::<2>("abc"), 9.8);
-        logical_layout.swap(0, 12);
-        assert_eq!(logical_layout.evaluate::<1>("abc"), 6.0);
+        assert_eq!(logical_layout.evaluate::<1>(&LogicalNGram::new(['a'])), 3.0);
+        assert_eq!(
+            logical_layout.evaluate::<2>(&LogicalNGram::new(['a', 'b'])),
+            5.4
+        );
+        logical_layout.swap(0, 10);
+        assert_eq!(logical_layout.evaluate::<1>(&LogicalNGram::new(['a'])), 1.6);
     }
 }

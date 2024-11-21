@@ -1,37 +1,26 @@
 use rand::prelude::*;
 
-use crate::interfaces::Algorithm;
+use super::Algorithm;
 use crate::keyboard_layout::LogicalLayout;
-use crate::n_gram::generate_n_grams;
+use crate::n_gram::NGramDB;
 pub struct HillClimbing {}
 
-impl<const N: usize> Algorithm<N> for HillClimbing {
-    fn optimize(
-        &self,
-        layout: &mut LogicalLayout,
-        text: &str,
-        iterations: usize,
-        batch_size: usize,
-    ) {
+impl Algorithm for HillClimbing {
+    fn optimize(&self, layout: &mut LogicalLayout, n_gram_db: &NGramDB, iterations: usize) {
         let mut rng = thread_rng();
         let mut best_cost = 10e10;
+        let one_grams = n_gram_db.get_one_grams().expect("Failed to get 1-grams");
+        let three_grams = n_gram_db.get_three_grams().expect("Failed to get 3-grams");
         for _ in 0..iterations {
-            generate_n_grams::<N>(text)
-                .chunks(batch_size)
-                .for_each(|n_grams| {
-                    let a = rng.gen_range(0..layout.len());
-                    let b = rng.gen_range(0..layout.len());
-                    layout.swap(a, b);
-                    let new_cost = n_grams
-                        .iter()
-                        .map(|n_gram| layout.evaluate::<N>(n_gram))
-                        .sum::<f32>();
-                    if new_cost < best_cost {
-                        best_cost = new_cost;
-                    } else {
-                        layout.swap(a, b);
-                    }
-                });
+            let a = rng.gen_range(0..layout.len());
+            let b = rng.gen_range(0..layout.len());
+            layout.swap(a, b);
+            let new_cost = layout.evaluate(&one_grams, &three_grams);
+            if new_cost < best_cost {
+                best_cost = new_cost;
+            } else {
+                layout.swap(a, b);
+            }
         }
     }
 }

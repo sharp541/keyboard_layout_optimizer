@@ -12,11 +12,25 @@ pub struct LogicalLayout<'a> {
 }
 
 impl<'a> LogicalLayout<'a> {
-    pub fn new(physical_layout: &'a PhysicalLayout, usable_chars: Vec<char>) -> Self {
-        let mut layout: Vec<Option<char>> = Vec::new();
-        for key in &usable_chars {
-            layout.push(Some(key.clone()));
+    pub fn from_layout(physical_layout: &'a PhysicalLayout, layout: Vec<Option<char>>) -> Self {
+        let usable_chars = layout
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| c.map(|c| (c, i)))
+            .collect();
+        let mut layout: Vec<Option<char>> = layout.clone();
+        if layout.len() < physical_layout.len() {
+            layout.extend(iter::repeat(None).take(physical_layout.len() - layout.len()));
         }
+        LogicalLayout {
+            layout,
+            usable_chars,
+            physical_layout,
+        }
+    }
+
+    pub fn from_usable_chars(physical_layout: &'a PhysicalLayout, usable_chars: Vec<char>) -> Self {
+        let mut layout: Vec<Option<char>> = usable_chars.iter().map(|c| Some(*c)).collect();
         if layout.len() < physical_layout.len() {
             layout.extend(iter::repeat(None).take(physical_layout.len() - layout.len()));
         }
@@ -32,18 +46,38 @@ impl<'a> LogicalLayout<'a> {
         }
     }
 
-    pub fn evaluate<const N: usize>(&self, n_gram: &LogicalNGram<N>) -> f32 {
-        let mut physical_n_gram = PhysicalNGram::new([0; N]);
-        for i in 0..N {
-            let key = &n_gram.get(i);
-            match self.usable_chars.get(key) {
-                Some(idx) => {
-                    physical_n_gram.set(i, *idx);
-                }
-                None => physical_n_gram.set(i, self.usable_chars.len()),
-            };
+    pub fn evaluate(
+        &self,
+        one_grams: &HashMap<LogicalNGram<1>, f32>,
+        three_grams: &HashMap<LogicalNGram<3>, f32>,
+    ) -> f32 {
+        let mut cost = 0.0;
+        for (n_gram, freq) in one_grams {
+            let physical_n_gram = PhysicalNGram::new([*self
+                .usable_chars
+                .get(&n_gram.get(0))
+                .unwrap_or(&self.layout.len())]);
+            cost += self.physical_layout.position_cost(physical_n_gram) * freq;
         }
-        self.physical_layout.cost(physical_n_gram)
+
+        for (n_gram, freq) in three_grams {
+            let physical_n_gram = PhysicalNGram::new([
+                *self
+                    .usable_chars
+                    .get(&n_gram.get(0))
+                    .unwrap_or(&self.layout.len()),
+                *self
+                    .usable_chars
+                    .get(&n_gram.get(1))
+                    .unwrap_or(&self.layout.len()),
+                *self
+                    .usable_chars
+                    .get(&n_gram.get(2))
+                    .unwrap_or(&self.layout.len()),
+            ]);
+            cost += self.physical_layout.stroke_cost(physical_n_gram) * freq;
+        }
+        cost
     }
 
     pub fn swap(&mut self, a: usize, b: usize) {
@@ -79,22 +113,30 @@ mod tests {
     use crate::keyboard_layout::*;
 
     #[test]
-    fn test_logical_layout() {
+    fn test_from_usable_chars() {
         let cost_matrix: [[f32; NUM_COLS]; NUM_ROWS] = [
             [3.0, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.0], // 上段
             [1.6, 1.3, 1.1, 1.0, 2.9, 2.9, 1.0, 1.1, 1.3, 1.6], // 中段（ホームポジション）
             [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 2.6, 3.2], // 下段
         ];
         let physical_layout = PhysicalLayout::new(cost_matrix).unwrap();
-        let mut logical_layout = LogicalLayout::new(&physical_layout, vec!['a', 'b', 'c']);
+        let logical_layout =
+            LogicalLayout::from_usable_chars(&physical_layout, vec!['a', 'b', 'c']);
         assert_eq!(logical_layout.len(), 30);
         assert_eq!(logical_layout.usable_chars().len(), 3);
-        assert_eq!(logical_layout.evaluate::<1>(&LogicalNGram::new(['a'])), 3.0);
-        assert_eq!(
-            logical_layout.evaluate::<2>(&LogicalNGram::new(['a', 'b'])),
-            5.4
-        );
-        logical_layout.swap(0, 10);
-        assert_eq!(logical_layout.evaluate::<1>(&LogicalNGram::new(['a'])), 1.6);
+    }
+
+    #[test]
+    fn test_from_layout() {
+        let cost_matrix: [[f32; NUM_COLS]; NUM_ROWS] = [
+            [3.0, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.0], // 上段
+            [1.6, 1.3, 1.1, 1.0, 2.9, 2.9, 1.0, 1.1, 1.3, 1.6], // 中段（ホームポジション）
+            [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 2.6, 3.2], // 下段
+        ];
+        let physical_layout = PhysicalLayout::new(cost_matrix).unwrap();
+        let layout = vec![Some('a'), Some('b'), Some('c')];
+        let logical_layout = LogicalLayout::from_layout(&physical_layout, layout);
+        assert_eq!(logical_layout.len(), 30);
+        assert_eq!(logical_layout.usable_chars().len(), 3);
     }
 }

@@ -24,20 +24,21 @@ impl PhysicalLayout {
         })
     }
 
-    pub fn cost<const N: usize>(&self, n_gram: PhysicalNGram<N>) -> f32 {
+    pub fn position_cost(&self, n_gram: PhysicalNGram<1>) -> f32 {
         let mut cost = 0.0;
-        for i in 0..N {
-            let key = &n_gram.get(i);
-            match self.mapping.get(*key) {
-                Some((row, col)) => {
-                    cost += self.cost_matrix[*row][*col];
-                }
-                None => cost += 10.0, // 未知の文字
-            };
-        }
+        let key = &n_gram.get(0);
+        match self.mapping.get(*key) {
+            Some((row, col)) => {
+                cost += self.cost_matrix[*row][*col];
+            }
+            None => cost += 10.0, // 未知の文字
+        };
         cost
     }
 
+    pub fn stroke_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
+        0.0
+    }
     pub fn len(&self) -> usize {
         self.mapping.len()
     }
@@ -82,7 +83,10 @@ mod tests {
             [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 2.6, 3.2], // 下段
         ];
         let physical_layout = PhysicalLayout::new(cost_matrix).unwrap();
-        assert_eq!(physical_layout.cost(PhysicalNGram::new([0, 1, 2])), 7.4);
-        assert_eq!(physical_layout.cost(PhysicalNGram::new([48, 49, 50])), 30.0);
+        assert_eq!(physical_layout.position_cost(PhysicalNGram::new([0])), 3.0);
+        assert_eq!(
+            physical_layout.position_cost(PhysicalNGram::new([48])),
+            10.0
+        );
     }
 }

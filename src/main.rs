@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use keyboard_layout_optimizer::algorithms::HillClimbing;
-use keyboard_layout_optimizer::interfaces::Algorithm;
+use keyboard_layout_optimizer::algorithms::{Algorithm, HillClimbing};
 use keyboard_layout_optimizer::keyboard_layout::*;
+use keyboard_layout_optimizer::n_gram::NGramDB;
 
 fn main() -> Result<(), std::io::Error> {
     let cost_table: [[f32; NUM_COLS]; NUM_ROWS] = [
@@ -16,14 +16,18 @@ fn main() -> Result<(), std::io::Error> {
     ];
 
     let physical_layout = PhysicalLayout::new(cost_table).expect("Invalid cost table");
-    let mut logical_layout = LogicalLayout::new(&physical_layout, usable_chars);
-    let algorithm: Box<dyn Algorithm<1>> = Box::new(HillClimbing {});
+    let mut logical_layout = LogicalLayout::from_usable_chars(&physical_layout, usable_chars);
+    let algorithm = HillClimbing {};
     println!("Initial: {}", logical_layout);
 
-    let text_path = Path::new("data/jap-n.txt");
-    let text = std::fs::read_to_string(text_path).expect("Failed to read text file");
+    let source_path = Path::new("data/jap-n.txt");
+    let db_path = Path::new("data/jap-n.db");
+    if !db_path.exists() {
+        let _ = NGramDB::new(source_path, db_path).expect("Failed to create NGramDB");
+    }
+    let n_gram_db = NGramDB::load(db_path).expect("Failed to load NGramDB");
 
-    algorithm.optimize(&mut logical_layout, &text, 100, 1024);
+    algorithm.optimize(&mut logical_layout, &n_gram_db, 1000);
 
     println!("Optimized: {}", logical_layout);
 

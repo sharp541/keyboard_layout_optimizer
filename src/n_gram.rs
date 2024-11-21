@@ -1,4 +1,8 @@
+use rusqlite::{params, Connection, Result};
+use std::collections::HashMap;
 use std::fmt::Display;
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug)]
 pub struct PhysicalNGram<const N: usize>([usize; N]);
@@ -23,9 +27,8 @@ impl<const N: usize> Display for PhysicalNGram<N> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, Hash, PartialEq)]
 pub struct LogicalNGram<const N: usize>([char; N]);
-
 impl<const N: usize> LogicalNGram<N> {
     pub fn new(n_gram: [char; N]) -> Self {
         LogicalNGram(n_gram)
@@ -40,73 +43,181 @@ impl<const N: usize> LogicalNGram<N> {
     }
 }
 
-impl<const N: usize> Display for LogicalNGram<N> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
+fn generate_n_grams(text: &str, n: usize) -> Vec<&str> {
+    text.as_bytes()
+        .windows(n)
+        .map(|w| std::str::from_utf8(w).unwrap())
+        .collect()
 }
 
-pub fn generate_n_grams<const N: usize>(text: &str) -> Vec<LogicalNGram<N>> {
-    let mut n_grams = Vec::new();
-    for i in 0..text.len() - N + 1 {
-        let n_gram: [char; N] = text[i..i + N]
-            .chars()
-            .collect::<Vec<char>>()
-            .try_into()
-            .expect("Failed to convert logical n-gram");
-        n_grams.push(LogicalNGram::new(n_gram));
+pub struct NGramDB {
+    conn: Connection,
+}
+
+impl NGramDB {
+    pub fn new<P: AsRef<Path>>(source_path: P, db_path: P) -> Result<Self> {
+        let text = fs::read_to_string(&source_path).expect("Failed to read file");
+        let mut conn = Connection::open(db_path).expect("Failed to open database");
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS n_grams (
+                      id INTEGER PRIMARY KEY,
+                      n INTEGER NOT NULL,
+                      n_gram TEXT NOT NULL,
+                      frequency REAL NOT NULL
+                      )",
+            [],
+        )
+        .expect("Failed to create table");
+
+        let tx = conn.transaction().expect("Failed to create transaction");
+
+        for &n in &[1, 3] {
+            let n_grams = generate_n_grams(&text, n);
+            let total_count = n_grams.len() as f64;
+
+            let mut n_gram_counts: HashMap<String, usize> = HashMap::new();
+            for n_gram in &n_grams {
+                *n_gram_counts.entry(n_gram.to_string()).or_insert(0) += 1;
+            }
+
+            for (n_gram_str, count) in n_gram_counts {
+                let frequency = count as f64 / total_count;
+                tx.execute(
+                    "INSERT INTO n_grams (n, n_gram, frequency) VALUES (?1, ?2, ?3)",
+                    params![n as i32, n_gram_str, frequency],
+                )
+                .expect("Failed to insert n-gram");
+            }
+        }
+
+        tx.commit().expect("Failed to commit transaction");
+
+        Ok(NGramDB { conn })
     }
-    n_grams
+
+    pub fn load<P: AsRef<Path>>(db_path: P) -> Result<Self> {
+        let conn = Connection::open(db_path).expect("Failed to open database");
+        Ok(NGramDB { conn })
+    }
+
+    pub fn get_one_grams(&self) -> Result<HashMap<LogicalNGram<1>, f32>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT n_gram, frequency FROM n_grams WHERE n = ?1")
+            .expect("Failed to prepare statement");
+        let n_grams_iter = stmt
+            .query_map(params![1 as i32], |row| {
+                let n_gram: String = row.get(0).expect("Failed to get n-gram");
+                let frequency: f32 = row.get(1).expect("Failed to get frequency");
+                Ok((
+                    LogicalNGram::new(n_gram.chars().collect::<Vec<char>>().try_into().unwrap()),
+                    frequency,
+                ))
+            })
+            .expect("Failed to get n-grams");
+
+        let mut n_gram_map: HashMap<LogicalNGram<1>, f32> = HashMap::new();
+        for n_gram in n_grams_iter {
+            let (n_gram_str, frequency) = n_gram.expect("Failed to get n-gram");
+            n_gram_map.insert(n_gram_str, frequency);
+        }
+
+        Ok(n_gram_map)
+    }
+
+    pub fn get_three_grams(&self) -> Result<HashMap<LogicalNGram<3>, f32>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT n_gram, frequency FROM n_grams WHERE n = ?1")
+            .expect("Failed to prepare statement");
+        let n_grams_iter = stmt
+            .query_map(params![3 as i32], |row| {
+                let n_gram: String = row.get(0).expect("Failed to get n-gram");
+                let frequency: f32 = row.get(1).expect("Failed to get frequency");
+                Ok((
+                    LogicalNGram::new(n_gram.chars().collect::<Vec<char>>().try_into().unwrap()),
+                    frequency,
+                ))
+            })
+            .expect("Failed to get n-grams");
+
+        let mut n_gram_map: HashMap<LogicalNGram<3>, f32> = HashMap::new();
+        for n_gram in n_grams_iter {
+            let (n_gram_str, frequency) = n_gram.expect("Failed to get n-gram");
+            n_gram_map.insert(n_gram_str, frequency);
+        }
+
+        Ok(n_gram_map)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_physical_n_gram() {
-        let n_gram = PhysicalNGram::new([0, 1, 2]);
-        assert_eq!(n_gram.get(0), 0);
-        assert_eq!(n_gram.get(1), 1);
-        assert_eq!(n_gram.get(2), 2);
-
-        let mut n_gram = PhysicalNGram::new([0, 1, 2]);
-        n_gram.set(0, 2);
-        n_gram.set(1, 1);
-        n_gram.set(2, 0);
-        assert_eq!(n_gram.get(0), 2);
-        assert_eq!(n_gram.get(1), 1);
-        assert_eq!(n_gram.get(2), 0);
-    }
-
-    #[test]
-    fn test_logical_n_gram() {
-        let n_gram = LogicalNGram::new(['a', 'b', 'c']);
-        assert_eq!(n_gram.get(0), 'a');
-        assert_eq!(n_gram.get(1), 'b');
-        assert_eq!(n_gram.get(2), 'c');
-
-        let mut n_gram = LogicalNGram::new(['a', 'b', 'c']);
-        n_gram.set(0, 'c');
-        n_gram.set(1, 'b');
-        n_gram.set(2, 'a');
-        assert_eq!(n_gram.get(0), 'c');
-        assert_eq!(n_gram.get(1), 'b');
-        assert_eq!(n_gram.get(2), 'a');
-    }
+    use std::fs;
 
     #[test]
     fn test_generate_n_grams() {
-        let n_grams = generate_n_grams::<3>("abcde");
-        assert_eq!(n_grams.len(), 3);
-        assert_eq!(n_grams[0].get(0), 'a');
-        assert_eq!(n_grams[0].get(1), 'b');
-        assert_eq!(n_grams[0].get(2), 'c');
-        assert_eq!(n_grams[1].get(0), 'b');
-        assert_eq!(n_grams[1].get(1), 'c');
-        assert_eq!(n_grams[1].get(2), 'd');
-        assert_eq!(n_grams[2].get(0), 'c');
-        assert_eq!(n_grams[2].get(1), 'd');
-        assert_eq!(n_grams[2].get(2), 'e');
+        let text = "abcde";
+
+        // 1-gram
+        let one_grams = generate_n_grams(text, 1);
+        assert_eq!(one_grams.len(), 5);
+        assert_eq!(one_grams, vec!["a", "b", "c", "d", "e"]);
+
+        // 2-gram
+        let two_grams = generate_n_grams(text, 2);
+        assert_eq!(two_grams.len(), 4);
+        assert_eq!(two_grams, vec!["ab", "bc", "cd", "de"]);
+    }
+
+    #[test]
+    fn test_ngramdb() {
+        let file_path = "test_text.txt";
+        let db_path = "test_text.db";
+
+        // テスト用のテキストファイルを作成
+        fs::write(file_path, "abcabc").expect("Failed to write test file");
+
+        // NGramDBを新規作成
+        let n_gram_db = NGramDB::new(file_path, db_path).expect("Failed to create NGramDB");
+
+        // 1-gramを取得して確認
+        let one_grams = n_gram_db.get_one_grams().expect("Failed to get 1-grams");
+        println!("{:?}", one_grams);
+        assert_eq!(one_grams.len(), 3);
+        assert!(one_grams.contains_key(&LogicalNGram::new(['a'])));
+        assert!(one_grams.contains_key(&LogicalNGram::new(['b'])));
+        assert!(one_grams.contains_key(&LogicalNGram::new(['c'])));
+
+        // 3-gramを取得して確認
+        let three_grams = n_gram_db.get_three_grams().expect("Failed to get 3-grams");
+        println!("{:?}", three_grams);
+        assert_eq!(three_grams.len(), 3);
+        assert!(three_grams.contains_key(&LogicalNGram::new(['a', 'b', 'c'])));
+        assert!(three_grams.contains_key(&LogicalNGram::new(['b', 'c', 'a'])));
+        assert!(three_grams.contains_key(&LogicalNGram::new(['c', 'a', 'b'])));
+
+        // NGramDBをロード
+        let n_gram_db = NGramDB::load(db_path).expect("Failed to load NGramDB");
+
+        // 1-gramを取得して確認
+        let one_grams = n_gram_db.get_one_grams().expect("Failed to get 1-grams");
+        assert_eq!(one_grams.len(), 3);
+        assert!(one_grams.contains_key(&LogicalNGram::new(['a'])));
+        assert!(one_grams.contains_key(&LogicalNGram::new(['b'])));
+        assert!(one_grams.contains_key(&LogicalNGram::new(['c'])));
+
+        // 3-gramを取得して確認
+        let three_grams = n_gram_db.get_three_grams().expect("Failed to get 3-grams");
+        assert_eq!(three_grams.len(), 3);
+        assert!(three_grams.contains_key(&LogicalNGram::new(['a', 'b', 'c'])));
+        assert!(three_grams.contains_key(&LogicalNGram::new(['b', 'c', 'a'])));
+        assert!(three_grams.contains_key(&LogicalNGram::new(['c', 'a', 'b'])));
+
+        // テスト用のファイルを削除
+        fs::remove_file(file_path).expect("Failed to remove test file");
+        fs::remove_file(db_path).expect("Failed to remove test database");
     }
 }

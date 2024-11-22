@@ -64,7 +64,7 @@ impl NGramDB {
                       id INTEGER PRIMARY KEY,
                       n INTEGER NOT NULL,
                       n_gram TEXT NOT NULL,
-                      frequency REAL NOT NULL
+                      count INTEGER NOT NULL
                       )",
             [],
         )
@@ -74,7 +74,6 @@ impl NGramDB {
 
         for &n in &[1, 3] {
             let n_grams = generate_n_grams(&text, n);
-            let total_count = n_grams.len() as f64;
 
             let mut n_gram_counts: HashMap<String, usize> = HashMap::new();
             for n_gram in &n_grams {
@@ -82,10 +81,9 @@ impl NGramDB {
             }
 
             for (n_gram_str, count) in n_gram_counts {
-                let frequency = count as f64 / total_count;
                 tx.execute(
-                    "INSERT INTO n_grams (n, n_gram, frequency) VALUES (?1, ?2, ?3)",
-                    params![n as i32, n_gram_str, frequency],
+                    "INSERT INTO n_grams (n, n_gram, count) VALUES (?1, ?2, ?3)",
+                    params![n as u8, n_gram_str, count],
                 )
                 .expect("Failed to insert n-gram");
             }
@@ -104,23 +102,29 @@ impl NGramDB {
     pub fn get_one_grams(&self) -> Result<HashMap<LogicalNGram<1>, f32>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT n_gram, frequency FROM n_grams WHERE n = ?1")
+            .prepare("SELECT n_gram, count FROM n_grams WHERE n = ?1")
             .expect("Failed to prepare statement");
         let n_grams_iter = stmt
             .query_map(params![1 as i32], |row| {
                 let n_gram: String = row.get(0).expect("Failed to get n-gram");
-                let frequency: f32 = row.get(1).expect("Failed to get frequency");
+                let count: u32 = row.get(1).expect("Failed to get count");
                 Ok((
                     LogicalNGram::new(n_gram.chars().collect::<Vec<char>>().try_into().unwrap()),
-                    frequency,
+                    count as f32,
                 ))
             })
             .expect("Failed to get n-grams");
 
         let mut n_gram_map: HashMap<LogicalNGram<1>, f32> = HashMap::new();
+        let mut total_count: f32 = 0.0;
         for n_gram in n_grams_iter {
-            let (n_gram_str, frequency) = n_gram.expect("Failed to get n-gram");
-            n_gram_map.insert(n_gram_str, frequency);
+            let (n_gram_str, count) = n_gram.expect("Failed to get n-gram");
+            total_count += count;
+            n_gram_map.insert(n_gram_str, count);
+        }
+
+        for count in n_gram_map.values_mut() {
+            *count /= total_count;
         }
 
         Ok(n_gram_map)
@@ -129,23 +133,29 @@ impl NGramDB {
     pub fn get_three_grams(&self) -> Result<HashMap<LogicalNGram<3>, f32>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT n_gram, frequency FROM n_grams WHERE n = ?1")
+            .prepare("SELECT n_gram, count FROM n_grams WHERE n = ?1")
             .expect("Failed to prepare statement");
         let n_grams_iter = stmt
             .query_map(params![3 as i32], |row| {
                 let n_gram: String = row.get(0).expect("Failed to get n-gram");
-                let frequency: f32 = row.get(1).expect("Failed to get frequency");
+                let count: u32 = row.get(1).expect("Failed to get frequency");
                 Ok((
                     LogicalNGram::new(n_gram.chars().collect::<Vec<char>>().try_into().unwrap()),
-                    frequency,
+                    count as f32,
                 ))
             })
             .expect("Failed to get n-grams");
 
         let mut n_gram_map: HashMap<LogicalNGram<3>, f32> = HashMap::new();
+        let mut total_count: f32 = 0.0;
         for n_gram in n_grams_iter {
-            let (n_gram_str, frequency) = n_gram.expect("Failed to get n-gram");
-            n_gram_map.insert(n_gram_str, frequency);
+            let (n_gram_str, count) = n_gram.expect("Failed to get n-gram");
+            total_count += count;
+            n_gram_map.insert(n_gram_str, count);
+        }
+
+        for count in n_gram_map.values_mut() {
+            *count /= total_count;
         }
 
         Ok(n_gram_map)

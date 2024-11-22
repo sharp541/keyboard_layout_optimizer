@@ -9,13 +9,13 @@ impl Algorithm for HillClimbing {
     fn optimize(&self, layout: &mut LogicalLayout, n_gram_db: &NGramDB, iterations: usize) {
         let mut rng = thread_rng();
         let mut best_cost = 10e10;
-        let one_grams = n_gram_db.get_one_grams().expect("Failed to get 1-grams");
-        let three_grams = n_gram_db.get_three_grams().expect("Failed to get 3-grams");
+        let mono_grams = n_gram_db.get_mono_grams().expect("Failed to get 1-grams");
+        let tri_grams = n_gram_db.get_tri_grams().expect("Failed to get 3-grams");
         for _ in 0..iterations {
             let a = rng.gen_range(0..layout.len());
             let b = rng.gen_range(0..layout.len());
             layout.swap(a, b);
-            let new_cost = layout.evaluate(&one_grams, &three_grams);
+            let new_cost = layout.evaluate(&mono_grams, &tri_grams);
             if new_cost < best_cost {
                 best_cost = new_cost;
             } else {

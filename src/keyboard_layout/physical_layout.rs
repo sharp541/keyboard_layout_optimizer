@@ -25,26 +25,48 @@ impl PhysicalLayout {
     }
 
     pub fn position_cost(&self, n_gram: PhysicalNGram<1>) -> f32 {
-        let mut cost = 0.0;
         let key = &n_gram.get(0);
         match self.mapping.get(*key) {
             Some((row, col)) => {
-                cost += self.cost_matrix[*row][*col];
+                return self.cost_matrix[*row][*col];
             }
-            None => cost += 10.0, // 未知の文字
+            None => return 10.0, // 未知の文字
         };
-        cost
     }
 
     pub fn stroke_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
-        0.0
+        let mut cost = 0.0;
+        for i in 0..2 {
+            let hand1 = self.hand(n_gram.get(i));
+            let hand2 = self.hand(n_gram.get(i + 1));
+            if hand1.same(hand2) {
+                cost += 3.0;
+            }
+        }
+        cost
     }
     pub fn len(&self) -> usize {
         self.mapping.len()
     }
 
-    pub fn coord(&self, index: usize) -> (usize, usize) {
-        self.mapping[index]
+    fn coord(&self, index: usize) -> Option<(usize, usize)> {
+        match self.mapping.get(index) {
+            Some(coord) => Some(*coord),
+            None => None,
+        }
+    }
+
+    fn hand(&self, index: usize) -> Hand {
+        match self.coord(index) {
+            Some((_, col)) => {
+                if col < NUM_COLS / 2 {
+                    Hand::Left
+                } else {
+                    Hand::Right
+                }
+            }
+            None => Hand::Other,
+        }
     }
 
     pub fn print(&self, layout: Vec<Option<char>>) {
@@ -69,6 +91,27 @@ impl PhysicalLayout {
             println!();
         }
     }
+}
+
+enum Hand {
+    Left,
+    Right,
+    Other,
+}
+
+impl Hand {
+    fn same(&self, other: Hand) -> bool {
+        matches!(self, Hand::Left) && matches!(other, Hand::Left)
+            || matches!(self, Hand::Right) && matches!(other, Hand::Right)
+    }
+}
+
+enum Finger {
+    Thumb,
+    Index,
+    Middle,
+    Ring,
+    Little,
 }
 
 #[cfg(test)]

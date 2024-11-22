@@ -99,7 +99,7 @@ impl NGramDB {
         Ok(NGramDB { conn })
     }
 
-    pub fn get_one_grams(&self) -> Result<HashMap<LogicalNGram<1>, f32>> {
+    pub fn get_mono_grams(&self) -> Result<HashMap<LogicalNGram<1>, f32>> {
         let mut stmt = self
             .conn
             .prepare("SELECT n_gram, count FROM n_grams WHERE n = ?1")
@@ -130,7 +130,7 @@ impl NGramDB {
         Ok(n_gram_map)
     }
 
-    pub fn get_three_grams(&self) -> Result<HashMap<LogicalNGram<3>, f32>> {
+    pub fn get_tri_grams(&self) -> Result<HashMap<LogicalNGram<3>, f32>> {
         let mut stmt = self
             .conn
             .prepare("SELECT n_gram, count FROM n_grams WHERE n = ?1")
@@ -172,9 +172,9 @@ mod tests {
         let text = "abcde";
 
         // 1-gram
-        let one_grams = generate_n_grams(text, 1);
-        assert_eq!(one_grams.len(), 5);
-        assert_eq!(one_grams, vec!["a", "b", "c", "d", "e"]);
+        let mono_grams = generate_n_grams(text, 1);
+        assert_eq!(mono_grams.len(), 5);
+        assert_eq!(mono_grams, vec!["a", "b", "c", "d", "e"]);
 
         // 2-gram
         let two_grams = generate_n_grams(text, 2);
@@ -194,37 +194,37 @@ mod tests {
         let n_gram_db = NGramDB::new(file_path, db_path).expect("Failed to create NGramDB");
 
         // 1-gramを取得して確認
-        let one_grams = n_gram_db.get_one_grams().expect("Failed to get 1-grams");
-        println!("{:?}", one_grams);
-        assert_eq!(one_grams.len(), 3);
-        assert!(one_grams.contains_key(&LogicalNGram::new(['a'])));
-        assert!(one_grams.contains_key(&LogicalNGram::new(['b'])));
-        assert!(one_grams.contains_key(&LogicalNGram::new(['c'])));
+        let mono_grams = n_gram_db.get_mono_grams().expect("Failed to get 1-grams");
+        println!("{:?}", mono_grams);
+        assert_eq!(mono_grams.len(), 3);
+        assert!(mono_grams.contains_key(&LogicalNGram::new(['a'])));
+        assert!(mono_grams.contains_key(&LogicalNGram::new(['b'])));
+        assert!(mono_grams.contains_key(&LogicalNGram::new(['c'])));
 
         // 3-gramを取得して確認
-        let three_grams = n_gram_db.get_three_grams().expect("Failed to get 3-grams");
-        println!("{:?}", three_grams);
-        assert_eq!(three_grams.len(), 3);
-        assert!(three_grams.contains_key(&LogicalNGram::new(['a', 'b', 'c'])));
-        assert!(three_grams.contains_key(&LogicalNGram::new(['b', 'c', 'a'])));
-        assert!(three_grams.contains_key(&LogicalNGram::new(['c', 'a', 'b'])));
+        let tri_grams = n_gram_db.get_tri_grams().expect("Failed to get 3-grams");
+        println!("{:?}", tri_grams);
+        assert_eq!(tri_grams.len(), 3);
+        assert!(tri_grams.contains_key(&LogicalNGram::new(['a', 'b', 'c'])));
+        assert!(tri_grams.contains_key(&LogicalNGram::new(['b', 'c', 'a'])));
+        assert!(tri_grams.contains_key(&LogicalNGram::new(['c', 'a', 'b'])));
 
         // NGramDBをロード
         let n_gram_db = NGramDB::load(db_path).expect("Failed to load NGramDB");
 
         // 1-gramを取得して確認
-        let one_grams = n_gram_db.get_one_grams().expect("Failed to get 1-grams");
-        assert_eq!(one_grams.len(), 3);
-        assert!(one_grams.contains_key(&LogicalNGram::new(['a'])));
-        assert!(one_grams.contains_key(&LogicalNGram::new(['b'])));
-        assert!(one_grams.contains_key(&LogicalNGram::new(['c'])));
+        let mono_grams = n_gram_db.get_mono_grams().expect("Failed to get 1-grams");
+        assert_eq!(mono_grams.len(), 3);
+        assert!(mono_grams.contains_key(&LogicalNGram::new(['a'])));
+        assert!(mono_grams.contains_key(&LogicalNGram::new(['b'])));
+        assert!(mono_grams.contains_key(&LogicalNGram::new(['c'])));
 
         // 3-gramを取得して確認
-        let three_grams = n_gram_db.get_three_grams().expect("Failed to get 3-grams");
-        assert_eq!(three_grams.len(), 3);
-        assert!(three_grams.contains_key(&LogicalNGram::new(['a', 'b', 'c'])));
-        assert!(three_grams.contains_key(&LogicalNGram::new(['b', 'c', 'a'])));
-        assert!(three_grams.contains_key(&LogicalNGram::new(['c', 'a', 'b'])));
+        let tri_grams = n_gram_db.get_tri_grams().expect("Failed to get 3-grams");
+        assert_eq!(tri_grams.len(), 3);
+        assert!(tri_grams.contains_key(&LogicalNGram::new(['a', 'b', 'c'])));
+        assert!(tri_grams.contains_key(&LogicalNGram::new(['b', 'c', 'a'])));
+        assert!(tri_grams.contains_key(&LogicalNGram::new(['c', 'a', 'b'])));
 
         // テスト用のファイルを削除
         fs::remove_file(file_path).expect("Failed to remove test file");

@@ -1,6 +1,7 @@
 pub const NUM_ROWS: usize = 3;
 pub const NUM_COLS: usize = 10;
 
+use super::hand_model::Hand;
 use crate::n_gram::PhysicalNGram;
 
 #[derive(Debug)]
@@ -91,27 +92,6 @@ impl PhysicalLayout {
             println!();
         }
     }
-}
-
-enum Hand {
-    Left,
-    Right,
-    Other,
-}
-
-impl Hand {
-    fn same(&self, other: Hand) -> bool {
-        matches!(self, Hand::Left) && matches!(other, Hand::Left)
-            || matches!(self, Hand::Right) && matches!(other, Hand::Right)
-    }
-}
-
-enum Finger {
-    Thumb,
-    Index,
-    Middle,
-    Ring,
-    Little,
 }
 
 #[cfg(test)]

@@ -1,5 +1,4 @@
 struct Reachable {
-    current_position: (u32, u32),
     force: f32,
     left: Move,
     right: Move,

@@ -46,19 +46,8 @@ impl<'a> LogicalLayout<'a> {
         }
     }
 
-    pub fn evaluate(
-        &self,
-        mono_grams: &HashMap<LogicalNGram<1>, f32>,
-        tri_grams: &HashMap<LogicalNGram<3>, f32>,
-    ) -> f32 {
+    pub fn evaluate(&self, tri_grams: &HashMap<LogicalNGram<3>, f32>) -> f32 {
         let mut cost = 0.0;
-        for (n_gram, freq) in mono_grams {
-            let physical_n_gram = PhysicalNGram::new([*self
-                .usable_chars
-                .get(&n_gram.get(0))
-                .unwrap_or(&self.layout.len())]);
-            cost += self.physical_layout.position_cost(physical_n_gram) * freq;
-        }
 
         for (n_gram, freq) in tri_grams {
             let physical_n_gram = PhysicalNGram::new([

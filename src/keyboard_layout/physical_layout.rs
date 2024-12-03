@@ -25,27 +25,45 @@ impl PhysicalLayout {
         })
     }
 
-    pub fn position_cost(&self, n_gram: PhysicalNGram<1>) -> f32 {
-        let key = &n_gram.get(0);
-        match self.mapping.get(*key) {
+    fn position_cost(&self, idx: usize) -> f32 {
+        match self.mapping.get(idx) {
             Some((row, col)) => {
                 return self.cost_matrix[*row][*col];
             }
-            None => return 10.0, // 未知の文字
+            None => return 100.0, // 未知の文字
         };
     }
 
+    fn row_cost(&self, key1: usize, key2: usize) -> f32 {
+        let (row1, col1) = match self.coord(key1) {
+            Some(coord) => coord,
+            None => return 100.0,
+        };
+        let (row2, col2) = match self.coord(key2) {
+            Some(coord) => coord,
+            None => return 100.0,
+        };
+        let same_column: i32 = if col1 == col2 { 1 } else { 0 };
+        (row1 as i32 - row2 as i32 + same_column).pow(2) as f32
+    }
+
     pub fn stroke_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
-        let mut cost = 0.0;
+        let mut stroke_cost = 0.0;
+        let position_cost = self.position_cost(n_gram.get(0));
         for i in 0..2 {
-            let hand1 = self.hand(n_gram.get(i));
-            let hand2 = self.hand(n_gram.get(i + 1));
+            let key1 = n_gram.get(i);
+            let key2 = n_gram.get(i + 1);
+            let hand1 = self.hand(key1);
+            let hand2 = self.hand(key2);
             if hand1.same(hand2) {
-                cost += 3.0;
+                stroke_cost += self.row_cost(key1, key2);
+            } else {
+                stroke_cost += 1.0;
             }
         }
-        cost
+        position_cost * (1.0 + stroke_cost)
     }
+
     pub fn len(&self) -> usize {
         self.mapping.len()
     }
@@ -106,10 +124,7 @@ mod tests {
             [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 2.6, 3.2], // 下段
         ];
         let physical_layout = PhysicalLayout::new(cost_matrix).unwrap();
-        assert_eq!(physical_layout.position_cost(PhysicalNGram::new([0])), 3.0);
-        assert_eq!(
-            physical_layout.position_cost(PhysicalNGram::new([48])),
-            10.0
-        );
+        assert_eq!(physical_layout.position_cost(0), 3.0);
+        assert_eq!(physical_layout.position_cost(48), 100.0);
     }
 }

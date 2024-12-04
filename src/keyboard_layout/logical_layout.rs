@@ -1,38 +1,52 @@
+use rand::seq::IteratorRandom;
 use std::collections::{HashMap, HashSet};
 use std::iter;
 
 use super::physical_layout::PhysicalLayout;
 use crate::n_gram::{LogicalNGram, PhysicalNGram};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LogicalLayout<'a> {
     layout: Vec<Option<char>>,
     usable_chars: HashMap<char, usize>,
+    unassigned_chars: HashSet<usize>,
     physical_layout: &'a PhysicalLayout,
+    rng: rand::rngs::ThreadRng,
 }
 
 impl<'a> LogicalLayout<'a> {
-    pub fn from_layout(physical_layout: &'a PhysicalLayout, layout: Vec<Option<char>>) -> Self {
-        let usable_chars = layout
-            .iter()
-            .enumerate()
-            .filter_map(|(i, c)| c.map(|c| (c, i)))
-            .collect();
-        let mut layout: Vec<Option<char>> = layout.clone();
+    pub fn from_layout(physical_layout: &'a PhysicalLayout, mut layout: Vec<Option<char>>) -> Self {
+        let mut unassigned_chars = HashSet::new();
+        let mut usable_chars: HashMap<char, usize> = HashMap::new();
+        for (i, c) in layout.iter().enumerate() {
+            match c {
+                Some(c) => {
+                    usable_chars.insert(*c, i);
+                }
+                None => {
+                    unassigned_chars.insert(i);
+                }
+            }
+        }
         if layout.len() < physical_layout.len() {
             layout.extend(iter::repeat(None).take(physical_layout.len() - layout.len()));
+            unassigned_chars.extend(layout.len()..physical_layout.len());
         }
         LogicalLayout {
             layout,
             usable_chars,
+            unassigned_chars,
             physical_layout,
+            rng: rand::thread_rng(),
         }
     }
 
     pub fn from_usable_chars(physical_layout: &'a PhysicalLayout, usable_chars: Vec<char>) -> Self {
         let mut layout: Vec<Option<char>> = usable_chars.iter().map(|c| Some(*c)).collect();
+        let mut unassigned_chars = HashSet::new();
         if layout.len() < physical_layout.len() {
             layout.extend(iter::repeat(None).take(physical_layout.len() - layout.len()));
+            unassigned_chars.extend(layout.len()..physical_layout.len());
         }
         let usable_chars = usable_chars
             .into_iter()
@@ -42,7 +56,9 @@ impl<'a> LogicalLayout<'a> {
         LogicalLayout {
             layout,
             usable_chars,
+            unassigned_chars,
             physical_layout,
+            rng: rand::thread_rng(),
         }
     }
 
@@ -79,20 +95,32 @@ impl<'a> LogicalLayout<'a> {
         self.layout.swap(a, b);
     }
 
+    pub fn get_char_index(&mut self, c: Option<char>) -> usize {
+        match c {
+            Some(c) => *self.usable_chars.get(&c).unwrap_or(&self.layout.len()),
+            None => {
+                if self.unassigned_chars.is_empty() {
+                    panic!("No unassigned chars");
+                }
+                *self
+                    .unassigned_chars
+                    .iter()
+                    .choose(&mut self.rng)
+                    .expect("No unassigned chars")
+            }
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.layout.len()
     }
 
-    pub fn usable_chars(&self) -> HashSet<char> {
-        self.usable_chars.keys().cloned().collect()
+    pub fn char_nums(&self) -> usize {
+        self.usable_chars.len()
     }
-}
 
-impl<'a> std::fmt::Display for LogicalLayout<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "\n")?;
-        self.physical_layout.print(self.layout.clone());
-        Ok(())
+    pub fn output(self) -> Vec<Option<char>> {
+        self.layout
     }
 }
 
@@ -112,7 +140,7 @@ mod tests {
         let logical_layout =
             LogicalLayout::from_usable_chars(&physical_layout, vec!['a', 'b', 'c']);
         assert_eq!(logical_layout.len(), 30);
-        assert_eq!(logical_layout.usable_chars().len(), 3);
+        assert_eq!(logical_layout.char_nums(), 3);
     }
 
     #[test]
@@ -126,6 +154,6 @@ mod tests {
         let layout = vec![Some('a'), Some('b'), Some('c')];
         let logical_layout = LogicalLayout::from_layout(&physical_layout, layout);
         assert_eq!(logical_layout.len(), 30);
-        assert_eq!(logical_layout.usable_chars().len(), 3);
+        assert_eq!(logical_layout.char_nums(), 3);
     }
 }

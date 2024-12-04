@@ -1,6 +1,5 @@
 use rand::prelude::*;
 
-use super::Algorithm;
 use crate::keyboard_layout::LogicalLayout;
 use crate::n_gram::NGramDB;
 
@@ -20,8 +19,8 @@ impl Annealing {
     }
 }
 
-impl Algorithm for Annealing {
-    fn optimize(&self, layout: &mut LogicalLayout, n_gram_db: &NGramDB, iterations: usize) {
+impl Annealing {
+    pub fn optimize(&self, layout: &mut LogicalLayout, n_gram_db: &NGramDB, iterations: usize) {
         let mut rng = thread_rng();
         let mut current_cost = 10e10;
         let tri_grams = n_gram_db.get_tri_grams().expect("Failed to get 3-grams");

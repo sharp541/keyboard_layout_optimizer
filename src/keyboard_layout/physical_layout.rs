@@ -88,7 +88,8 @@ impl PhysicalLayout {
         }
     }
 
-    pub fn print(&self, layout: Vec<Option<char>>) {
+    pub fn print(&self, layout: &Vec<Option<char>>) {
+        println!();
         for (i, row) in layout.chunks(self.cost_matrix[0].len()).enumerate() {
             for (j, key) in row.iter().enumerate() {
                 if j == NUM_COLS / 2 {

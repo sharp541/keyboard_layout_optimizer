@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use keyboard_layout_optimizer::algorithms::{Algorithm, HillClimbing};
+use keyboard_layout_optimizer::algorithms::{Algorithm, Annealing, Genetic, HillClimbing};
 use keyboard_layout_optimizer::keyboard_layout::*;
 use keyboard_layout_optimizer::n_gram::NGramDB;
 
@@ -17,7 +17,7 @@ fn main() -> Result<(), std::io::Error> {
 
     let physical_layout = PhysicalLayout::new(cost_table).expect("Invalid cost table");
     let mut logical_layout = LogicalLayout::from_usable_chars(&physical_layout, usable_chars);
-    let algorithm = HillClimbing {};
+    let algorithm = Annealing::new(100.0, 0.99);
     println!("Initial: {}", logical_layout);
 
     let source_path = Path::new("data/jap-n.txt");
@@ -27,7 +27,7 @@ fn main() -> Result<(), std::io::Error> {
     }
     let n_gram_db = NGramDB::load(db_path).expect("Failed to load NGramDB");
 
-    algorithm.optimize(&mut logical_layout, &n_gram_db, 1000);
+    algorithm.optimize(&mut logical_layout, &n_gram_db, 10000);
 
     println!("Optimized: {}", logical_layout);
 

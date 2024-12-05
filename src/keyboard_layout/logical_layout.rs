@@ -11,7 +11,6 @@ pub struct LogicalLayout<'a> {
     usable_chars: HashMap<char, usize>,
     unassigned_chars: HashSet<usize>,
     physical_layout: &'a PhysicalLayout,
-    rng: rand::rngs::ThreadRng,
 }
 
 impl<'a> LogicalLayout<'a> {
@@ -37,7 +36,6 @@ impl<'a> LogicalLayout<'a> {
             usable_chars,
             unassigned_chars,
             physical_layout,
-            rng: rand::thread_rng(),
         }
     }
 
@@ -58,7 +56,6 @@ impl<'a> LogicalLayout<'a> {
             usable_chars,
             unassigned_chars,
             physical_layout,
-            rng: rand::thread_rng(),
         }
     }
 
@@ -102,11 +99,7 @@ impl<'a> LogicalLayout<'a> {
                 if self.unassigned_chars.is_empty() {
                     panic!("No unassigned chars");
                 }
-                *self
-                    .unassigned_chars
-                    .iter()
-                    .choose(&mut rand::thread_rng())
-                    .expect("No unassigned chars")
+                *self.unassigned_chars.iter().next().unwrap()
             }
         }
     }
@@ -116,6 +109,14 @@ impl<'a> LogicalLayout<'a> {
     }
 
     pub fn set(&mut self, index: usize, c: Option<char>) {
+        match c {
+            Some(c) => {
+                self.usable_chars.insert(c, index);
+            }
+            None => {
+                self.unassigned_chars.insert(index);
+            }
+        }
         self.layout[index] = c;
     }
 

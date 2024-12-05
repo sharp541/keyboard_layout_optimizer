@@ -2,6 +2,7 @@ use rand::prelude::*;
 use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
 use std::collections::{HashMap, HashSet};
+use std::iter;
 
 use crate::keyboard_layout::{LogicalLayout, PhysicalLayout};
 use crate::n_gram::{LogicalNGram, NGramDB};
@@ -12,6 +13,9 @@ pub struct Genetic {
 
 impl Genetic {
     pub fn new(population_size: usize) -> Self {
+        if population_size < 3 {
+            panic!("population_size must be greater than 2");
+        }
         Self { population_size }
     }
 
@@ -24,9 +28,9 @@ impl Genetic {
     ) {
         let tri_grams = n_gram_db.get_tri_grams().expect("Failed to get 3-grams");
         let mut rng = thread_rng();
-        let mut layout = vec![None; physical_layout.len()];
-        for c in usable_chars {
-            layout.push(Some(*c));
+        let mut layout: Vec<Option<char>> = usable_chars.iter().map(|c| Some(*c)).collect();
+        if layout.len() < physical_layout.len() {
+            layout.extend(iter::repeat(None).take(physical_layout.len() - layout.len()));
         }
         let mut population = Vec::with_capacity(self.population_size);
         for _ in 0..self.population_size {
@@ -36,7 +40,8 @@ impl Genetic {
             population.push(individual);
         }
 
-        for _ in 0..iterations {
+        for i in 0..iterations {
+            println!("iteration: {}", i);
             let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
 
             // Evaluate population
@@ -46,15 +51,17 @@ impl Genetic {
 
             // Sort population by score
             population.sort_by(|a, b| {
-                b.score
-                    .partial_cmp(&a.score)
+                a.score
+                    .partial_cmp(&b.score)
                     .expect("Failed to compare scores")
             });
+            println!("best score: {}", population[0].score);
 
             // Keep elite individuals
             let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
             new_population.extend(population.iter().take(elite_num).cloned());
 
+            // Generate new individuals
             while new_population.len() < self.population_size {
                 let weights: Vec<f32> = population.iter().map(|ind| 1.0 / ind.score).collect();
                 let [parent1, parent2]: [&Individual; 2] = (0..population.len())
@@ -74,6 +81,26 @@ impl Genetic {
 
             // Generate new individuals
             population = new_population;
+        }
+
+        // 最終世代の評価
+        population.iter_mut().for_each(|i| {
+            i.evaluate(&tri_grams);
+        });
+
+        // スコアで昇順ソート（小さい順）
+        population.sort_by(|a, b| {
+            a.score
+                .partial_cmp(&b.score)
+                .expect("Failed to compare scores")
+        });
+
+        // 上位3つの結果を出力
+        println!("Top 3 results:");
+        for (i, individual) in population.iter().take(3).enumerate() {
+            println!("#{} (score: {})", i + 1, individual.score);
+            println!("Layout:\n");
+            physical_layout.print(&individual.layout());
         }
     }
 }
@@ -98,14 +125,17 @@ impl<'a> Individual<'a> {
         let mut child2 = other.layout.clone();
 
         let mut cycle: HashSet<usize> = HashSet::new();
-        let mut start = rng.gen_range(0..child1.len());
-        while !cycle.contains(&start) {
-            cycle.insert(start);
-            start = self.layout.get_char_index(other.layout.get(start)).clone();
+        while cycle.len() < 2 {
+            cycle.clear();
+            let mut start = rng.gen_range(0..child1.len());
+            while cycle.insert(start) {
+                start = self.layout.get_char_index(other.layout.get(start));
+            }
         }
+
         cycle.iter().for_each(|i| {
-            child1.set(*i, other.layout.get(*i));
-            child2.set(*i, self.layout.get(*i));
+            child1.set(*i, other.layout.get(*i).clone());
+            child2.set(*i, self.layout.get(*i).clone());
         });
 
         (Individual::new(child1), Individual::new(child2))
@@ -117,7 +147,7 @@ impl<'a> Individual<'a> {
         let (start, end) = if a < b { (a, b) } else { (b, a) };
         let median = (start + end + 1) / 2;
         let left = start..median;
-        let right = (median + 1)..=end;
+        let right = median..=end;
         left.zip(right.rev()).for_each(|(i, j)| {
             self.layout.swap(i, j);
         });
@@ -132,13 +162,93 @@ impl<'a> Individual<'a> {
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.layout.len()
+    pub fn layout(&self) -> Vec<Option<char>> {
+        self.layout.clone().output()
     }
 }
 
 impl<'a> PartialEq for Individual<'a> {
     fn eq(&self, other: &Self) -> bool {
         self.score == other.score
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::keyboard_layout::PhysicalLayout;
+
+    #[test]
+    fn test_reverse_mutation() {
+        let cost_table = [
+            [3.7, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.7], // 上段
+            [3.0, 1.3, 1.1, 1.0, 1.6, 1.6, 1.0, 1.1, 1.3, 3.0], // 中段（ホームポジション）
+            [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 10e10, 10e10, 3.2], // 下段
+        ];
+        let physical = PhysicalLayout::new(cost_table).expect("Invalid cost table");
+        let usable_chars = vec![
+            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+            'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', ',', '.',
+        ];
+        let logical = LogicalLayout::from_usable_chars(&physical, usable_chars);
+        let individual = Individual::new(logical);
+        let mut rng = thread_rng();
+
+        let original_layout = individual.layout();
+        let mut test_individual = individual.clone();
+        test_individual.reverse_mutation(&mut rng);
+
+        assert_ne!(test_individual.layout(), original_layout);
+    }
+
+    #[test]
+    fn test_cycle_crossover() {
+        let cost_table = [
+            [3.7, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.7], // 上段
+            [3.0, 1.3, 1.1, 1.0, 1.6, 1.6, 1.0, 1.1, 1.3, 3.0], // 中段（ホームポジション）
+            [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 10e10, 10e10, 3.2], // 下段
+        ];
+        let physical = PhysicalLayout::new(cost_table).expect("Invalid cost table");
+        let usable_chars = vec![
+            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+            'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', ',', '.',
+        ];
+        let usable_chars2 = vec![
+            'z', ',', '.', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+            'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y',
+        ];
+        let logical1 = LogicalLayout::from_usable_chars(&physical, usable_chars);
+        let logical2 = LogicalLayout::from_usable_chars(&physical, usable_chars2);
+
+        let parent1 = Individual::new(logical1);
+        let parent2 = Individual::new(logical2);
+        let mut rng = thread_rng();
+
+        let (child1, _) = parent1.cycle_crossover(&parent2, &mut rng);
+
+        assert_ne!(child1.layout(), parent1.layout());
+    }
+
+    #[test]
+    fn test_shift_mutation() {
+        let cost_table = [
+            [3.7, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.7], // 上段
+            [3.0, 1.3, 1.1, 1.0, 1.6, 1.6, 1.0, 1.1, 1.3, 3.0], // 中段（ホームポジション）
+            [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 10e10, 10e10, 3.2], // 下段
+        ];
+        let physical = PhysicalLayout::new(cost_table).expect("Invalid cost table");
+        let usable_chars = vec![
+            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
+            'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', ',', '.',
+        ];
+        let logical = LogicalLayout::from_usable_chars(&physical, usable_chars);
+        let individual = Individual::new(logical);
+        let mut rng = thread_rng();
+
+        let original_layout = individual.layout();
+        let mut test_individual = individual.clone();
+        test_individual.shift_mutation(&mut rng);
+
+        assert_ne!(test_individual.layout(), original_layout);
     }
 }

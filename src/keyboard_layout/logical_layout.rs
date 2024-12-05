@@ -95,7 +95,7 @@ impl<'a> LogicalLayout<'a> {
         self.layout.swap(a, b);
     }
 
-    pub fn get_char_index(&mut self, c: Option<char>) -> usize {
+    pub fn get_char_index(&self, c: Option<char>) -> usize {
         match c {
             Some(c) => *self.usable_chars.get(&c).unwrap_or(&self.layout.len()),
             None => {
@@ -105,10 +105,18 @@ impl<'a> LogicalLayout<'a> {
                 *self
                     .unassigned_chars
                     .iter()
-                    .choose(&mut self.rng)
+                    .choose(&mut rand::thread_rng())
                     .expect("No unassigned chars")
             }
         }
+    }
+
+    pub fn get(&self, index: usize) -> Option<char> {
+        self.layout[index]
+    }
+
+    pub fn set(&mut self, index: usize, c: Option<char>) {
+        self.layout[index] = c;
     }
 
     pub fn len(&self) -> usize {

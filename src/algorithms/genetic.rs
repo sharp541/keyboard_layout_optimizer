@@ -1,6 +1,7 @@
 use rand::prelude::*;
 use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::iter;
 
@@ -44,8 +45,8 @@ impl Genetic {
             println!("iteration: {}", i);
             let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
 
-            // Evaluate population
-            population.iter_mut().for_each(|i| {
+            // 並列化された評価
+            population.par_iter_mut().for_each(|i| {
                 i.evaluate(&tri_grams);
             });
 
@@ -62,29 +63,34 @@ impl Genetic {
             new_population.extend(population.iter().take(elite_num).cloned());
 
             // Generate new individuals
-            while new_population.len() < self.population_size {
-                let weights: Vec<f32> = population.iter().map(|ind| 1.0 / ind.score).collect();
-                let [parent1, parent2]: [&Individual; 2] = (0..population.len())
-                    .collect::<Vec<_>>()
-                    .choose_multiple_weighted(&mut rng, 2, |i| weights[*i])
-                    .unwrap()
-                    .map(|i| &population[*i])
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .unwrap();
-                let (mut child1, mut child2) = parent1.cycle_crossover(parent2, &mut rng);
-                child1.reverse_mutation(&mut rng);
-                child2.shift_mutation(&mut rng);
-                new_population.push(child1);
-                new_population.push(child2);
-            }
+            let mut children: Vec<Individual> = (0..self.population_size - elite_num)
+                .into_par_iter()
+                .flat_map(|_| {
+                    let mut rng = rand::thread_rng();
+                    let weights: Vec<f32> = population.iter().map(|ind| 1.0 / ind.score).collect();
+                    let [parent1, parent2]: [&Individual; 2] = (0..population.len())
+                        .collect::<Vec<_>>()
+                        .choose_multiple_weighted(&mut rng, 2, |i| weights[*i])
+                        .unwrap()
+                        .map(|i| &population[*i])
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap();
+                    let (mut child1, mut child2) = parent1.cycle_crossover(parent2, &mut rng);
+                    child1.reverse_mutation(&mut rng);
+                    child2.shift_mutation(&mut rng);
+                    vec![child1, child2]
+                })
+                .collect();
+
+            new_population.append(&mut children);
 
             // Generate new individuals
             population = new_population;
         }
 
-        // 最終世代の評価
-        population.iter_mut().for_each(|i| {
+        // 最終世代の評価（並列化）
+        population.par_iter_mut().for_each(|i| {
             i.evaluate(&tri_grams);
         });
 

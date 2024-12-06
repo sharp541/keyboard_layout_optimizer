@@ -43,7 +43,7 @@ impl PhysicalLayout {
             Some(coord) => coord,
             None => return 100.0,
         };
-        let same_column: i32 = if col1 == col2 { 2 } else { 0 };
+        let same_column: i32 = if col1 == col2 { 1 } else { 0 };
         (row1 as i32 - row2 as i32 + same_column).pow(2) as f32
     }
 

@@ -1,5 +1,4 @@
 use rand::prelude::*;
-use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -45,7 +44,6 @@ impl Genetic {
             println!("iteration: {}", i);
             let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
 
-            // 並列化された評価
             population.par_iter_mut().for_each(|i| {
                 i.evaluate(&tri_grams);
             });
@@ -62,12 +60,12 @@ impl Genetic {
             let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
             new_population.extend(population.iter().take(elite_num).cloned());
 
+            let weights: Vec<f32> = population.iter().map(|ind| 1.0 / ind.score).collect();
             // Generate new individuals
             let mut children: Vec<Individual> = (0..self.population_size - elite_num)
                 .into_par_iter()
                 .flat_map(|_| {
-                    let mut rng = rand::thread_rng();
-                    let weights: Vec<f32> = population.iter().map(|ind| 1.0 / ind.score).collect();
+                    let mut rng = thread_rng();
                     let [parent1, parent2]: [&Individual; 2] = (0..population.len())
                         .collect::<Vec<_>>()
                         .choose_multiple_weighted(&mut rng, 2, |i| weights[*i])
@@ -89,19 +87,16 @@ impl Genetic {
             population = new_population;
         }
 
-        // 最終世代の評価（並列化）
         population.par_iter_mut().for_each(|i| {
             i.evaluate(&tri_grams);
         });
 
-        // スコアで昇順ソート（小さい順）
         population.sort_by(|a, b| {
             a.score
                 .partial_cmp(&b.score)
                 .expect("Failed to compare scores")
         });
 
-        // 上位3つの結果を出力
         println!("Top 3 results:");
         for (i, individual) in population.iter().take(3).enumerate() {
             println!("#{} (score: {})", i + 1, individual.score);

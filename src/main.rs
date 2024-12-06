@@ -37,7 +37,7 @@ fn main() -> Result<(), std::io::Error> {
     // let mut logical_layout = LogicalLayout::from_usable_chars(&physical_layout, usable_chars);
     let algorithm = Genetic::new(128);
 
-    algorithm.optimize(&physical_layout, &qwerty_layout, &n_gram_db, 30);
+    algorithm.optimize(&physical_layout, &qwerty_layout, &n_gram_db, 100);
 
     // println!("Optimized:");
     // physical_layout.print(&logical_layout.output());

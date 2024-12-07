@@ -55,8 +55,7 @@ pub struct NGramDB {
 }
 
 impl NGramDB {
-    pub fn new<P: AsRef<Path>>(source_path: P, db_path: P) -> Result<Self> {
-        let text = fs::read_to_string(&source_path).expect("Failed to read file");
+    pub fn new<P: AsRef<Path>>(source_paths: &[P], db_path: P) -> Result<Self> {
         let mut conn = Connection::open(db_path).expect("Failed to open database");
 
         conn.execute(
@@ -72,21 +71,23 @@ impl NGramDB {
 
         let tx = conn.transaction().expect("Failed to create transaction");
 
-        for &n in &[1, 3] {
-            let n_grams = generate_n_grams(&text, n);
+        let mut n_gram_counts: HashMap<String, usize> = HashMap::new();
 
-            let mut n_gram_counts: HashMap<String, usize> = HashMap::new();
+        let n = 3;
+        for source_path in source_paths {
+            let text = fs::read_to_string(source_path).expect("Failed to read file");
+            let n_grams = generate_n_grams(&text, n);
             for n_gram in &n_grams {
                 *n_gram_counts.entry(n_gram.to_string()).or_insert(0) += 1;
             }
+        }
 
-            for (n_gram_str, count) in n_gram_counts {
-                tx.execute(
-                    "INSERT INTO n_grams (n, n_gram, count) VALUES (?1, ?2, ?3)",
-                    params![n as u8, n_gram_str, count],
-                )
-                .expect("Failed to insert n-gram");
-            }
+        for (n_gram_str, count) in n_gram_counts {
+            tx.execute(
+                "INSERT INTO n_grams (n, n_gram, count) VALUES (?1, ?2, ?3)",
+                params![n as u8, n_gram_str, count],
+            )
+            .expect("Failed to insert n-gram");
         }
 
         tx.commit().expect("Failed to commit transaction");

@@ -1,6 +1,8 @@
 pub const NUM_ROWS: usize = 3;
 pub const NUM_COLS: usize = 10;
 
+use std::cmp::max;
+
 use super::hand_model::Hand;
 use crate::n_gram::PhysicalNGram;
 
@@ -44,7 +46,9 @@ impl PhysicalLayout {
             None => return 100.0,
         };
         let same_column: i32 = if col1 == col2 { 1 } else { 0 };
-        (row1 as i32 - row2 as i32 + same_column).pow(2) as f32
+        let col_diff = max(0, (col1 as i32 - col2 as i32).abs() - 2);
+        let row_diff = max(0, (row1 as i32 - row2 as i32).abs() - 1);
+        (row_diff + same_column + col_diff).abs() as f32
     }
 
     pub fn stroke_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {

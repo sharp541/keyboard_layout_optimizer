@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::iter;
 
 use crate::keyboard_layout::{LogicalLayout, PhysicalLayout};
-use crate::n_gram::{LogicalNGram, NGramDB};
+use crate::n_gram::LogicalNGram;
 
 pub struct Genetic {
     population_size: usize,
@@ -23,23 +23,23 @@ impl Genetic {
         &self,
         physical_layout: &PhysicalLayout,
         usable_chars: &[char],
-        n_gram_db: &NGramDB,
+        tri_grams: &HashMap<LogicalNGram<3>, f32>,
         iterations: usize,
     ) {
-        let tri_grams = n_gram_db.get_tri_grams().expect("Failed to get 3-grams");
         let mut rng = thread_rng();
-        let mut layout: Vec<Option<char>> = usable_chars.iter().map(|c| Some(*c)).collect();
-        if layout.len() < physical_layout.len() {
-            layout.extend(iter::repeat(None).take(physical_layout.len() - layout.len()));
-        }
+        let initial_layout =
+            LogicalLayout::from_usable_chars(physical_layout, usable_chars.to_vec());
+        let mut layout = initial_layout.clone().output();
         let mut population = Vec::with_capacity(self.population_size);
         for _ in 0..self.population_size {
             layout.shuffle(&mut rng);
-            let copy = LogicalLayout::from_layout(physical_layout, layout.clone());
+            let copy = LogicalLayout::from_usable_chars(physical_layout, layout.clone());
             let individual = Individual::new(copy);
             population.push(individual);
         }
 
+        let mut best_layout = Individual::new(initial_layout);
+        best_layout.evaluate(tri_grams);
         for i in 0..iterations {
             println!("iteration: {}", i);
             let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
@@ -54,55 +54,45 @@ impl Genetic {
                     .partial_cmp(&b.score)
                     .expect("Failed to compare scores")
             });
-            println!("best score: {}", population[0].score);
+            println!("best score: {}", best_layout.score);
 
             // Keep elite individuals
-            let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
+            let elite_num = self.population_size / 8;
             new_population.extend(population.iter().take(elite_num).cloned());
 
             let weights: Vec<f32> = population.iter().map(|ind| 1.0 / ind.score).collect();
             // Generate new individuals
             let mut children: Vec<Individual> = (0..self.population_size - elite_num)
                 .into_par_iter()
-                .flat_map(|_| {
+                .map(|_| {
                     let mut rng = thread_rng();
-                    let [parent1, parent2]: [&Individual; 2] = (0..population.len())
+                    let parents: Vec<_> = (0..population.len())
                         .collect::<Vec<_>>()
                         .choose_multiple_weighted(&mut rng, 2, |i| weights[*i])
-                        .unwrap()
+                        .expect("Failed to choose parents")
                         .map(|i| &population[*i])
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .unwrap();
-                    let (mut child1, mut child2) = parent1.cycle_crossover(parent2, &mut rng);
-                    child1.reverse_mutation(&mut rng);
-                    child2.shift_mutation(&mut rng);
+                        .collect();
+
+                    let (child1, child2) = parents[0].cycle_crossover(parents[1], &mut rng);
                     vec![child1, child2]
                 })
+                .flatten()
                 .collect();
 
+            children.par_iter_mut().for_each(|i| {
+                i.mutate(&mut thread_rng());
+            });
             new_population.append(&mut children);
 
             // Generate new individuals
             population = new_population;
+            if population[0].score < best_layout.score {
+                best_layout = population[0].clone();
+            }
         }
 
-        population.par_iter_mut().for_each(|i| {
-            i.evaluate(&tri_grams);
-        });
-
-        population.sort_by(|a, b| {
-            a.score
-                .partial_cmp(&b.score)
-                .expect("Failed to compare scores")
-        });
-
-        println!("Top 3 results:");
-        for (i, individual) in population.iter().take(3).enumerate() {
-            println!("#{} (score: {})", i + 1, individual.score);
-            println!("Layout:\n");
-            physical_layout.print(&individual.layout());
-        }
+        println!("best score: {}", best_layout.score);
+        physical_layout.print(&best_layout.layout());
     }
 }
 
@@ -113,15 +103,15 @@ struct Individual<'a> {
 }
 
 impl<'a> Individual<'a> {
-    pub fn new(layout: LogicalLayout<'a>) -> Self {
+    fn new(layout: LogicalLayout<'a>) -> Self {
         Self { layout, score: 0.0 }
     }
 
-    pub fn evaluate(&mut self, tri_grams: &HashMap<LogicalNGram<3>, f32>) {
+    fn evaluate(&mut self, tri_grams: &HashMap<LogicalNGram<3>, f32>) {
         self.score = self.layout.evaluate(tri_grams);
     }
 
-    pub fn cycle_crossover(&self, other: &Self, rng: &mut ThreadRng) -> (Self, Self) {
+    fn cycle_crossover(&self, other: &Self, rng: &mut ThreadRng) -> (Self, Self) {
         let mut child1 = self.layout.clone();
         let mut child2 = other.layout.clone();
 
@@ -142,7 +132,7 @@ impl<'a> Individual<'a> {
         (Individual::new(child1), Individual::new(child2))
     }
 
-    pub fn reverse_mutation(&mut self, rng: &mut ThreadRng) {
+    fn reverse_mutation(&mut self, rng: &mut ThreadRng) {
         let a = rng.gen_range(0..self.layout.len());
         let b = rng.gen_range(0..self.layout.len());
         let (start, end) = if a < b { (a, b) } else { (b, a) };
@@ -154,7 +144,7 @@ impl<'a> Individual<'a> {
         });
     }
 
-    pub fn shift_mutation(&mut self, rng: &mut ThreadRng) {
+    fn shift_mutation(&mut self, rng: &mut ThreadRng) {
         let a = rng.gen_range(0..self.layout.len());
         let b = rng.gen_range(0..self.layout.len());
         let (start, end) = if a < b { (a, b) } else { (b, a) };
@@ -163,7 +153,26 @@ impl<'a> Individual<'a> {
         }
     }
 
-    pub fn layout(&self) -> Vec<Option<char>> {
+    fn random_mutation(&mut self, rng: &mut ThreadRng) {
+        let mutation_num = rng.gen_range(0..self.layout.len() / 4);
+        for _ in 0..mutation_num {
+            let a = rng.gen_range(0..self.layout.len());
+            let b = rng.gen_range(0..self.layout.len());
+            self.layout.swap(a, b);
+        }
+    }
+
+    fn mutate(&mut self, rng: &mut ThreadRng) {
+        let mutation_type = rng.gen_range(0..5);
+        match mutation_type {
+            0 => (),
+            1 => self.reverse_mutation(rng),
+            2 => self.shift_mutation(rng),
+            _ => self.random_mutation(rng),
+        }
+    }
+
+    fn layout(&self) -> Vec<char> {
         self.layout.clone().output()
     }
 }

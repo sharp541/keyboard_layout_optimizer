@@ -1,7 +1,7 @@
-use rand::prelude::*;
-
 use crate::keyboard_layout::LogicalLayout;
-use crate::n_gram::NGramDB;
+use crate::n_gram::LogicalNGram;
+use rand::prelude::*;
+use std::collections::HashMap;
 
 pub struct Annealing {
     // 初期温度
@@ -20,10 +20,14 @@ impl Annealing {
 }
 
 impl Annealing {
-    pub fn optimize(&self, layout: &mut LogicalLayout, n_gram_db: &NGramDB, iterations: usize) {
+    pub fn optimize(
+        &self,
+        layout: &mut LogicalLayout,
+        tri_grams: &HashMap<LogicalNGram<3>, f32>,
+        iterations: usize,
+    ) {
         let mut rng = thread_rng();
         let mut current_cost = 10e10;
-        let tri_grams = n_gram_db.get_tri_grams().expect("Failed to get 3-grams");
 
         // 現在の温度
         let mut temperature = self.initial_temperature;

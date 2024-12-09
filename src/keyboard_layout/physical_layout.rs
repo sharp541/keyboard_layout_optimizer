@@ -32,21 +32,21 @@ impl PhysicalLayout {
             Some((row, col)) => {
                 return self.cost_matrix[*row][*col];
             }
-            None => return 100.0, // 未知の文字
+            None => return 10.0, // 未知の文字
         };
     }
 
     fn row_cost(&self, key1: usize, key2: usize) -> f32 {
         let (row1, col1) = match self.coord(key1) {
             Some(coord) => coord,
-            None => return 100.0,
+            None => return 10.0,
         };
         let (row2, col2) = match self.coord(key2) {
             Some(coord) => coord,
-            None => return 100.0,
+            None => return 10.0,
         };
         let same_column: i32 = if col1 == col2 { 1 } else { 0 };
-        let col_diff = max(0, (col1 as i32 - col2 as i32).abs() - 2);
+        let col_diff = max(0, (col1 as i32 - col2 as i32).abs() - 3);
         let row_diff = max(0, (row1 as i32 - row2 as i32).abs() - 1);
         (row_diff + same_column + col_diff).abs() as f32
     }
@@ -65,7 +65,7 @@ impl PhysicalLayout {
                 stroke_cost += 1.0;
             }
         }
-        position_cost * (1.0 + stroke_cost)
+        position_cost.log2() + (1.0 + stroke_cost).log2()
     }
 
     pub fn len(&self) -> usize {
@@ -92,17 +92,14 @@ impl PhysicalLayout {
         }
     }
 
-    pub fn print(&self, layout: &Vec<Option<char>>) {
+    pub fn print(&self, layout: &Vec<char>) {
         println!();
         for (i, row) in layout.chunks(self.cost_matrix[0].len()).enumerate() {
             for (j, key) in row.iter().enumerate() {
                 if j == NUM_COLS / 2 {
                     print!("| ");
                 }
-                match key {
-                    Some(c) => print!("{} ", c),
-                    None => print!("  "),
-                }
+                print!("{} ", key);
                 if (i + 1) * (j + 1) == self.cost_matrix[0].len() * self.cost_matrix.len() {
                     println!("\n");
                     std::iter::repeat("--")

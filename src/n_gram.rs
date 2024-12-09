@@ -131,7 +131,7 @@ impl NGramDB {
         Ok(n_gram_map)
     }
 
-    pub fn get_tri_grams(&self) -> Result<HashMap<LogicalNGram<3>, f32>> {
+    pub fn get_tri_grams(&self, usable_chars: &[char]) -> Result<HashMap<LogicalNGram<3>, f32>> {
         let mut stmt = self
             .conn
             .prepare("SELECT n_gram, count FROM n_grams WHERE n = ?1")
@@ -151,8 +151,10 @@ impl NGramDB {
         let mut total_count: f32 = 0.0;
         for n_gram in n_grams_iter {
             let (n_gram_str, count) = n_gram.expect("Failed to get n-gram");
-            total_count += count;
-            n_gram_map.insert(n_gram_str, count);
+            if n_gram_str.0.iter().all(|&c| usable_chars.contains(&c)) {
+                total_count += count;
+                n_gram_map.insert(n_gram_str, count);
+            }
         }
 
         for count in n_gram_map.values_mut() {
@@ -203,7 +205,9 @@ mod tests {
         assert!(mono_grams.contains_key(&LogicalNGram::new(['c'])));
 
         // 3-gramを取得して確認
-        let tri_grams = n_gram_db.get_tri_grams().expect("Failed to get 3-grams");
+        let tri_grams = n_gram_db
+            .get_tri_grams(&['a', 'b', 'c'])
+            .expect("Failed to get 3-grams");
         println!("{:?}", tri_grams);
         assert_eq!(tri_grams.len(), 3);
         assert!(tri_grams.contains_key(&LogicalNGram::new(['a', 'b', 'c'])));
@@ -221,7 +225,9 @@ mod tests {
         assert!(mono_grams.contains_key(&LogicalNGram::new(['c'])));
 
         // 3-gramを取得して確認
-        let tri_grams = n_gram_db.get_tri_grams().expect("Failed to get 3-grams");
+        let tri_grams = n_gram_db
+            .get_tri_grams(&['a', 'b', 'c'])
+            .expect("Failed to get 3-grams");
         assert_eq!(tri_grams.len(), 3);
         assert!(tri_grams.contains_key(&LogicalNGram::new(['a', 'b', 'c'])));
         assert!(tri_grams.contains_key(&LogicalNGram::new(['b', 'c', 'a'])));

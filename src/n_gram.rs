@@ -192,7 +192,7 @@ mod tests {
         fs::write(file_path, "abcabc").expect("Failed to write test file");
 
         // NGramDBを新規作成
-        let n_gram_db = NGramDB::new(file_path, db_path).expect("Failed to create NGramDB");
+        let n_gram_db = NGramDB::new(&[file_path], db_path).expect("Failed to create NGramDB");
 
         // 1-gramを取得して確認
         let mono_grams = n_gram_db.get_mono_grams().expect("Failed to get 1-grams");

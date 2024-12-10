@@ -1,8 +1,6 @@
-use rand::prelude::*;
-use rand::seq::SliceRandom;
+use fastrand;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
-use std::iter;
 
 use crate::keyboard_layout::{LogicalLayout, PhysicalLayout};
 use crate::n_gram::LogicalNGram;
@@ -26,13 +24,12 @@ impl Genetic {
         tri_grams: &HashMap<LogicalNGram<3>, f32>,
         iterations: usize,
     ) {
-        let mut rng = thread_rng();
         let initial_layout =
             LogicalLayout::from_usable_chars(physical_layout, usable_chars.to_vec());
         let mut layout = initial_layout.clone().output();
         let mut population = Vec::with_capacity(self.population_size);
         for _ in 0..self.population_size {
-            layout.shuffle(&mut rng);
+            fastrand::shuffle(&mut layout);
             let copy = LogicalLayout::from_usable_chars(physical_layout, layout.clone());
             let individual = Individual::new(copy);
             population.push(individual);
@@ -40,6 +37,7 @@ impl Genetic {
 
         let mut best_layout = Individual::new(initial_layout);
         best_layout.evaluate(tri_grams);
+        let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
         for i in 0..iterations {
             println!("iteration: {}", i);
             let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
@@ -54,23 +52,21 @@ impl Genetic {
                     .partial_cmp(&b.score)
                     .expect("Failed to compare scores")
             });
-            println!("best score: {}", best_layout.score);
 
             // Keep elite individuals
-            let elite_num = self.population_size / 8;
             new_population.extend(population.iter().take(elite_num).cloned());
 
-            let weights: Vec<f32> = population.iter().map(|ind| 1.0 / ind.score).collect();
+            // let sum = population.iter().map(|ind| ind.score).sum::<f32>();
+            // let weights: Vec<f32> = population.iter().map(|ind| ind.score / sum).collect();
             // Generate new individuals
             let mut children: Vec<Individual> = (0..self.population_size - elite_num)
                 .into_par_iter()
                 .map(|_| {
-                    let mut rng = thread_rng();
-                    let parents: Vec<_> = (0..population.len())
-                        .collect::<Vec<_>>()
-                        .choose_multiple_weighted(&mut rng, 2, |i| weights[*i])
-                        .expect("Failed to choose parents")
-                        .map(|i| &population[*i])
+                    let mut rng = fastrand::Rng::new();
+                    let parents: Vec<_> = fastrand::choose_multiple(0..population.len(), 5)
+                        .into_iter()
+                        .map(|i| &population[i])
+                        .take(1)
                         .collect();
 
                     let (child1, child2) = parents[0].cycle_crossover(parents[1], &mut rng);
@@ -78,9 +74,10 @@ impl Genetic {
                 })
                 .flatten()
                 .collect();
+            println!("best score: {}", best_layout.score);
 
             children.par_iter_mut().for_each(|i| {
-                i.mutate(&mut thread_rng());
+                i.mutate(&mut fastrand::Rng::new());
             });
             new_population.append(&mut children);
 
@@ -111,30 +108,32 @@ impl<'a> Individual<'a> {
         self.score = self.layout.evaluate(tri_grams);
     }
 
-    fn cycle_crossover(&self, other: &Self, rng: &mut ThreadRng) -> (Self, Self) {
+    fn cycle_crossover(&self, other: &Self, rng: &mut fastrand::Rng) -> (Self, Self) {
         let mut child1 = self.layout.clone();
         let mut child2 = other.layout.clone();
 
         let mut cycle: HashSet<usize> = HashSet::new();
-        while cycle.len() < 2 {
-            cycle.clear();
-            let mut start = rng.gen_range(0..child1.len());
-            while cycle.insert(start) {
-                start = self.layout.get_char_index(other.layout.get(start));
-            }
+        let mut start = rng.usize(0..child1.len());
+        while cycle.insert(start) {
+            start = self.layout.get_char_index(other.layout.get(start));
         }
 
-        cycle.iter().for_each(|i| {
-            child1.set(*i, other.layout.get(*i).clone());
-            child2.set(*i, self.layout.get(*i).clone());
-        });
+        match cycle.len() {
+            0..2 => (),
+            _ => {
+                cycle.iter().for_each(|i| {
+                    child1.set(*i, other.layout.get(*i).clone());
+                    child2.set(*i, self.layout.get(*i).clone());
+                });
+            }
+        }
 
         (Individual::new(child1), Individual::new(child2))
     }
 
-    fn reverse_mutation(&mut self, rng: &mut ThreadRng) {
-        let a = rng.gen_range(0..self.layout.len());
-        let b = rng.gen_range(0..self.layout.len());
+    fn reverse_mutation(&mut self, rng: &mut fastrand::Rng) {
+        let a = rng.usize(0..self.layout.len());
+        let b = rng.usize(0..self.layout.len());
         let (start, end) = if a < b { (a, b) } else { (b, a) };
         let median = (start + end + 1) / 2;
         let left = start..median;
@@ -144,26 +143,26 @@ impl<'a> Individual<'a> {
         });
     }
 
-    fn shift_mutation(&mut self, rng: &mut ThreadRng) {
-        let a = rng.gen_range(0..self.layout.len());
-        let b = rng.gen_range(0..self.layout.len());
+    fn shift_mutation(&mut self, rng: &mut fastrand::Rng) {
+        let a = rng.usize(0..self.layout.len());
+        let b = rng.usize(0..self.layout.len());
         let (start, end) = if a < b { (a, b) } else { (b, a) };
         for i in start..end {
             self.layout.swap(i, i + 1);
         }
     }
 
-    fn random_mutation(&mut self, rng: &mut ThreadRng) {
-        let mutation_num = rng.gen_range(0..self.layout.len() / 4);
+    fn random_mutation(&mut self, rng: &mut fastrand::Rng) {
+        let mutation_num = rng.usize(0..self.layout.len() / 4);
         for _ in 0..mutation_num {
-            let a = rng.gen_range(0..self.layout.len());
-            let b = rng.gen_range(0..self.layout.len());
+            let a = rng.usize(0..self.layout.len());
+            let b = rng.usize(0..self.layout.len());
             self.layout.swap(a, b);
         }
     }
 
-    fn mutate(&mut self, rng: &mut ThreadRng) {
-        let mutation_type = rng.gen_range(0..5);
+    fn mutate(&mut self, rng: &mut fastrand::Rng) {
+        let mutation_type = rng.u8(0..6);
         match mutation_type {
             0 => (),
             1 => self.reverse_mutation(rng),
@@ -202,7 +201,7 @@ mod tests {
         ];
         let logical = LogicalLayout::from_usable_chars(&physical, usable_chars);
         let individual = Individual::new(logical);
-        let mut rng = thread_rng();
+        let mut rng = fastrand::Rng::new();
 
         let original_layout = individual.layout();
         let mut test_individual = individual.clone();
@@ -232,7 +231,7 @@ mod tests {
 
         let parent1 = Individual::new(logical1);
         let parent2 = Individual::new(logical2);
-        let mut rng = thread_rng();
+        let mut rng = fastrand::Rng::new();
 
         let (child1, _) = parent1.cycle_crossover(&parent2, &mut rng);
 
@@ -253,7 +252,7 @@ mod tests {
         ];
         let logical = LogicalLayout::from_usable_chars(&physical, usable_chars);
         let individual = Individual::new(logical);
-        let mut rng = thread_rng();
+        let mut rng = fastrand::Rng::new();
 
         let original_layout = individual.layout();
         let mut test_individual = individual.clone();

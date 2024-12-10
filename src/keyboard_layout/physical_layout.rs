@@ -45,8 +45,8 @@ impl PhysicalLayout {
             Some(coord) => coord,
             None => return 10.0,
         };
-        let same_column: i32 = if col1 == col2 { 1 } else { 0 };
-        let col_diff = max(0, (col1 as i32 - col2 as i32).abs() - 3);
+        let same_column: i32 = if col1 == col2 { 2 } else { 0 };
+        let col_diff = max(0, (col1 as i32 - col2 as i32).abs() - 2);
         let row_diff = max(0, (row1 as i32 - row2 as i32).abs() - 1);
         (row_diff + same_column + col_diff).abs() as f32
     }
@@ -101,7 +101,7 @@ impl PhysicalLayout {
                 }
                 print!("{} ", key);
                 if (i + 1) * (j + 1) == self.cost_matrix[0].len() * self.cost_matrix.len() {
-                    println!("\n");
+                    println!();
                     std::iter::repeat("--")
                         .take(self.cost_matrix[0].len() + 1)
                         .for_each(|c| {

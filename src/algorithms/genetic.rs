@@ -1,4 +1,7 @@
 use fastrand;
+use plotters::prelude::*;
+use rand::distributions::WeightedIndex;
+use rand::prelude::*;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -38,8 +41,10 @@ impl Genetic {
         let mut best_layout = Individual::new(initial_layout);
         best_layout.evaluate(tri_grams);
         let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
+
+        let mut best_scores: Vec<f32> = Vec::with_capacity(iterations);
+
         for i in 0..iterations {
-            println!("iteration: {}", i);
             let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
 
             population.par_iter_mut().for_each(|i| {
@@ -56,40 +61,65 @@ impl Genetic {
             // Keep elite individuals
             new_population.extend(population.iter().take(elite_num).cloned());
 
-            // let sum = population.iter().map(|ind| ind.score).sum::<f32>();
-            // let weights: Vec<f32> = population.iter().map(|ind| ind.score / sum).collect();
-            // Generate new individuals
+            let sum = population.iter().map(|ind| ind.score).sum::<f32>();
+            let weights: Vec<f32> = population.iter().map(|ind| ind.score / sum).collect();
+            let dist = WeightedIndex::new(weights).unwrap();
+            let mut rng = thread_rng();
             let mut children: Vec<Individual> = (0..self.population_size - elite_num)
-                .into_par_iter()
-                .map(|_| {
-                    let mut rng = fastrand::Rng::new();
-                    let parents: Vec<_> = fastrand::choose_multiple(0..population.len(), 5)
-                        .into_iter()
-                        .map(|i| &population[i])
-                        .take(1)
-                        .collect();
-
-                    let (child1, child2) = parents[0].cycle_crossover(parents[1], &mut rng);
-                    vec![child1, child2]
-                })
-                .flatten()
+                .into_iter()
+                .map(|_| population[dist.sample(&mut rng)].clone())
                 .collect();
-            println!("best score: {}", best_layout.score);
 
             children.par_iter_mut().for_each(|i| {
                 i.mutate(&mut fastrand::Rng::new());
             });
             new_population.append(&mut children);
 
-            // Generate new individuals
             population = new_population;
             if population[0].score < best_layout.score {
                 best_layout = population[0].clone();
             }
+            if i % (iterations / 10) == 0 {
+                println!("iteration: {} / {}", i, iterations);
+                println!("best score: {}", best_layout.score);
+            }
+            best_scores.push(best_layout.score);
         }
 
         println!("best score: {}", best_layout.score);
         physical_layout.print(&best_layout.layout());
+
+        // Plot the best scores
+        let file_name = format!(
+            "graphs/best_scores_{}_{}.png",
+            self.population_size, iterations
+        );
+        let root = BitMapBackend::new(&file_name, (640, 480)).into_drawing_area();
+        root.fill(&WHITE).unwrap();
+        let mut chart = ChartBuilder::on(&root)
+            .caption("Best Scores Over Iterations", ("sans-serif", 50))
+            .margin(10)
+            .x_label_area_size(30)
+            .y_label_area_size(30)
+            .build_cartesian_2d(0..iterations, 1.0f32..2.0f32)
+            .unwrap();
+
+        chart.configure_mesh().draw().unwrap();
+
+        chart
+            .draw_series(LineSeries::new(
+                best_scores.iter().enumerate().map(|(x, y)| (x, *y)),
+                &RED,
+            ))
+            .unwrap()
+            .label("Best Score")
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+
+        chart
+            .configure_series_labels()
+            .background_style(&WHITE.mix(0.8))
+            .draw()
+            .unwrap();
     }
 }
 

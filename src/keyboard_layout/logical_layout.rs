@@ -1,5 +1,4 @@
-use std::collections::{HashMap, HashSet};
-use std::iter;
+use std::collections::HashMap;
 
 use super::physical_layout::PhysicalLayout;
 use crate::n_gram::{LogicalNGram, PhysicalNGram};

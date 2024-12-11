@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use keyboard_layout_optimizer::algorithms::{Annealing, Genetic, HillClimbing};
+use keyboard_layout_optimizer::algorithms::Genetic;
 use keyboard_layout_optimizer::keyboard_layout::*;
 use keyboard_layout_optimizer::n_gram::NGramDB;
 
@@ -25,13 +25,14 @@ fn main() -> Result<(), std::io::Error> {
         'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k',
         'l', ';', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
     ];
-    let physical_layout = PhysicalLayout::new(cost_table).expect("Invalid cost table");
+    let mut physical_layout = PhysicalLayout::new(cost_table).expect("Invalid cost table");
+    physical_layout.calculate_tri_gram_cost();
 
     let qwerty = LogicalLayout::from_usable_chars(&physical_layout, qwerty_layout.clone());
     let tri_grams = n_gram_db
         .get_tri_grams(&usable_chars)
         .expect("Failed to evaluate qwerty");
-    let score = qwerty.evaluate(&tri_grams);
+    let score = qwerty.evaluate(&physical_layout, &tri_grams);
     println!("qwerty score: {}", score);
 
     // let mut logical_layout = LogicalLayout::from_usable_chars(&physical_layout, usable_chars);

@@ -4,14 +4,13 @@ use super::physical_layout::PhysicalLayout;
 use crate::n_gram::{LogicalNGram, PhysicalNGram};
 
 #[derive(Debug, Clone)]
-pub struct LogicalLayout<'a> {
+pub struct LogicalLayout {
     layout: Vec<char>,
     usable_chars: HashMap<char, usize>,
-    physical_layout: &'a PhysicalLayout,
 }
 
-impl<'a> LogicalLayout<'a> {
-    pub fn from_usable_chars(physical_layout: &'a PhysicalLayout, usable_chars: Vec<char>) -> Self {
+impl<'a> LogicalLayout {
+    pub fn from_usable_chars(physical_layout: &PhysicalLayout, usable_chars: Vec<char>) -> Self {
         let mut layout: Vec<char> = usable_chars.iter().map(|c| *c).collect();
         let mut usable_chars: HashMap<char, usize> = usable_chars
             .into_iter()
@@ -30,11 +29,14 @@ impl<'a> LogicalLayout<'a> {
         LogicalLayout {
             layout,
             usable_chars,
-            physical_layout,
         }
     }
 
-    pub fn evaluate(&self, tri_grams: &HashMap<LogicalNGram<3>, f32>) -> f32 {
+    pub fn evaluate(
+        &self,
+        physical_layout: &PhysicalLayout,
+        tri_grams: &HashMap<LogicalNGram<3>, f32>,
+    ) -> f32 {
         let mut cost = 0.0;
 
         for (n_gram, freq) in tri_grams {
@@ -43,7 +45,7 @@ impl<'a> LogicalLayout<'a> {
                 self.get_char_index(n_gram.get(1)),
                 self.get_char_index(n_gram.get(2)),
             ]);
-            cost += self.physical_layout.stroke_cost(physical_n_gram) * freq;
+            cost += physical_layout.get_tri_gram_cost(physical_n_gram) * freq;
         }
         cost
     }

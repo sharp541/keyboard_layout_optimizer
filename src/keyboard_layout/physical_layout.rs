@@ -2,6 +2,7 @@ pub const NUM_ROWS: usize = 3;
 pub const NUM_COLS: usize = 10;
 
 use std::cmp::max;
+use std::collections::HashMap;
 
 use super::hand_model::Hand;
 use crate::n_gram::PhysicalNGram;
@@ -10,6 +11,7 @@ use crate::n_gram::PhysicalNGram;
 pub struct PhysicalLayout {
     cost_matrix: [[f32; NUM_COLS]; NUM_ROWS],
     mapping: [(usize, usize); NUM_COLS * NUM_ROWS],
+    tri_gram_cost: HashMap<PhysicalNGram<3>, f32>,
 }
 
 impl PhysicalLayout {
@@ -20,11 +22,27 @@ impl PhysicalLayout {
                 mapping[i * NUM_COLS + j] = (i, j);
             }
         }
+        let tri_gram_cost = HashMap::new();
 
         Ok(PhysicalLayout {
             cost_matrix,
             mapping,
+            tri_gram_cost,
         })
+    }
+
+    pub fn calculate_tri_gram_cost(&mut self) {
+        let num_keys = NUM_COLS * NUM_ROWS;
+        for k1 in 0..num_keys {
+            for k2 in 0..num_keys {
+                for k3 in 0..num_keys {
+                    self.tri_gram_cost.insert(
+                        PhysicalNGram::new([k1, k2, k3]),
+                        self.stroke_cost(PhysicalNGram::new([k1, k2, k3])),
+                    );
+                }
+            }
+        }
     }
 
     fn position_cost(&self, idx: usize) -> f32 {
@@ -51,7 +69,7 @@ impl PhysicalLayout {
         (row_diff + same_column + col_diff).abs() as f32
     }
 
-    pub fn stroke_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
+    fn stroke_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
         let mut stroke_cost = 0.0;
         let position_cost = self.position_cost(n_gram.get(0));
         for i in 0..2 {
@@ -70,6 +88,13 @@ impl PhysicalLayout {
 
     pub fn len(&self) -> usize {
         self.mapping.len()
+    }
+
+    pub fn get_tri_gram_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
+        *self
+            .tri_gram_cost
+            .get(&n_gram)
+            .expect("Failed to get tri gram cost")
     }
 
     fn coord(&self, index: usize) -> Option<(usize, usize)> {

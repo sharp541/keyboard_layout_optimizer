@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, Hash, PartialEq)]
 pub struct PhysicalNGram<const N: usize>([usize; N]);
 
 impl<const N: usize> PhysicalNGram<N> {

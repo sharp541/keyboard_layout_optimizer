@@ -39,7 +39,7 @@ impl Genetic {
         }
 
         let mut best_layout = Individual::new(initial_layout);
-        best_layout.evaluate(tri_grams);
+        best_layout.evaluate(physical_layout, tri_grams);
         let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
 
         let mut best_scores: Vec<f32> = Vec::with_capacity(iterations);
@@ -48,7 +48,7 @@ impl Genetic {
             let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
 
             population.par_iter_mut().for_each(|i| {
-                i.evaluate(&tri_grams);
+                i.evaluate(physical_layout, tri_grams);
             });
 
             // Sort population by score
@@ -124,18 +124,22 @@ impl Genetic {
 }
 
 #[derive(Debug, Clone)]
-struct Individual<'a> {
-    layout: LogicalLayout<'a>,
+struct Individual {
+    layout: LogicalLayout,
     score: f32,
 }
 
-impl<'a> Individual<'a> {
-    fn new(layout: LogicalLayout<'a>) -> Self {
+impl<'a> Individual {
+    fn new(layout: LogicalLayout) -> Self {
         Self { layout, score: 0.0 }
     }
 
-    fn evaluate(&mut self, tri_grams: &HashMap<LogicalNGram<3>, f32>) {
-        self.score = self.layout.evaluate(tri_grams);
+    fn evaluate(
+        &mut self,
+        physical_layout: &PhysicalLayout,
+        tri_grams: &HashMap<LogicalNGram<3>, f32>,
+    ) {
+        self.score = self.layout.evaluate(physical_layout, tri_grams);
     }
 
     fn cycle_crossover(&self, other: &Self, rng: &mut fastrand::Rng) -> (Self, Self) {
@@ -183,7 +187,7 @@ impl<'a> Individual<'a> {
     }
 
     fn random_mutation(&mut self, rng: &mut fastrand::Rng) {
-        let mutation_num = rng.usize(0..self.layout.len() / 4);
+        let mutation_num = rng.usize(0..3);
         for _ in 0..mutation_num {
             let a = rng.usize(0..self.layout.len());
             let b = rng.usize(0..self.layout.len());
@@ -206,7 +210,7 @@ impl<'a> Individual<'a> {
     }
 }
 
-impl<'a> PartialEq for Individual<'a> {
+impl<'a> PartialEq for Individual {
     fn eq(&self, other: &Self) -> bool {
         self.score == other.score
     }

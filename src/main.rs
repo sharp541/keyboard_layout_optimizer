@@ -35,12 +35,9 @@ fn main() -> Result<(), std::io::Error> {
     let score = qwerty.evaluate(&physical_layout, &tri_grams);
     println!("qwerty score: {}", score);
 
-    // let mut logical_layout = LogicalLayout::from_usable_chars(&physical_layout, usable_chars);
     let algorithm = Genetic::new(512);
 
     algorithm.optimize(&physical_layout, &usable_chars, &tri_grams, 30000);
 
-    // println!("Optimized:");
-    // physical_layout.print(&logical_layout.output());
     Ok(())
 }

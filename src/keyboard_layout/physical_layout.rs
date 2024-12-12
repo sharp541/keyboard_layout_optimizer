@@ -12,6 +12,8 @@ pub struct PhysicalLayout {
     cost_matrix: [[f32; NUM_COLS]; NUM_ROWS],
     mapping: [(usize, usize); NUM_COLS * NUM_ROWS],
     tri_gram_cost: HashMap<PhysicalNGram<3>, f32>,
+    pub left_grams: Vec<PhysicalNGram<3>>,
+    pub right_grams: Vec<PhysicalNGram<3>>,
 }
 
 impl PhysicalLayout {
@@ -28,6 +30,8 @@ impl PhysicalLayout {
             cost_matrix,
             mapping,
             tri_gram_cost,
+            left_grams: get_left_grams(),
+            right_grams: get_right_grams(),
         })
     }
 
@@ -90,10 +94,10 @@ impl PhysicalLayout {
         self.mapping.len()
     }
 
-    pub fn get_tri_gram_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
+    pub fn get_tri_gram_cost(&self, n_gram: &PhysicalNGram<3>) -> f32 {
         *self
             .tri_gram_cost
-            .get(&n_gram)
+            .get(n_gram)
             .expect("Failed to get tri gram cost")
     }
 
@@ -137,6 +141,42 @@ impl PhysicalLayout {
             println!();
         }
     }
+}
+
+fn get_left_grams() -> Vec<PhysicalNGram<3>> {
+    let mut keys = Vec::new();
+    for i in 0..NUM_ROWS {
+        for j in 0..NUM_COLS / 2 {
+            keys.push(i * NUM_COLS + j);
+        }
+    }
+    let mut grams = Vec::new();
+    for k1 in keys.iter() {
+        for k2 in keys.iter() {
+            for k3 in keys.iter() {
+                grams.push(PhysicalNGram::new([*k1, *k2, *k3]));
+            }
+        }
+    }
+    grams
+}
+
+fn get_right_grams() -> Vec<PhysicalNGram<3>> {
+    let mut keys = Vec::new();
+    for i in 0..NUM_ROWS {
+        for j in NUM_COLS / 2..NUM_COLS {
+            keys.push(i * NUM_COLS + j);
+        }
+    }
+    let mut grams = Vec::new();
+    for k1 in keys.iter() {
+        for k2 in keys.iter() {
+            for k3 in keys.iter() {
+                grams.push(PhysicalNGram::new([*k1, *k2, *k3]));
+            }
+        }
+    }
+    grams
 }
 
 #[cfg(test)]

@@ -1,8 +1,8 @@
+use rayon::prelude::*;
 use std::collections::HashMap;
 
 use super::physical_layout::PhysicalLayout;
 use crate::n_gram::{LogicalNGram, PhysicalNGram};
-
 #[derive(Debug, Clone)]
 pub struct LogicalLayout {
     layout: Vec<char>,
@@ -36,18 +36,35 @@ impl<'a> LogicalLayout {
         &self,
         physical_layout: &PhysicalLayout,
         tri_grams: &HashMap<LogicalNGram<3>, f32>,
-    ) -> f32 {
-        let mut cost = 0.0;
+    ) -> (f32, f32) {
+        let cost_left = &physical_layout
+            .left_grams
+            .par_iter()
+            .map(|n_gram: &PhysicalNGram<3>| -> f32 {
+                let logical_n_gram = LogicalNGram::new([
+                    self.get(n_gram.get(0)),
+                    self.get(n_gram.get(1)),
+                    self.get(n_gram.get(2)),
+                ]);
+                tri_grams.get(&logical_n_gram).unwrap_or(&0.0)
+                    * physical_layout.get_tri_gram_cost(n_gram)
+            })
+            .sum();
 
-        for (n_gram, freq) in tri_grams {
-            let physical_n_gram = PhysicalNGram::new([
-                self.get_char_index(n_gram.get(0)),
-                self.get_char_index(n_gram.get(1)),
-                self.get_char_index(n_gram.get(2)),
-            ]);
-            cost += physical_layout.get_tri_gram_cost(physical_n_gram) * freq;
-        }
-        cost
+        let cost_right = &physical_layout
+            .right_grams
+            .par_iter()
+            .map(|n_gram: &PhysicalNGram<3>| -> f32 {
+                let logical_n_gram = LogicalNGram::new([
+                    self.get(n_gram.get(0)),
+                    self.get(n_gram.get(1)),
+                    self.get(n_gram.get(2)),
+                ]);
+                tri_grams.get(&logical_n_gram).unwrap_or(&0.0)
+                    * physical_layout.get_tri_gram_cost(n_gram)
+            })
+            .sum();
+        (*cost_left, *cost_right)
     }
 
     pub fn swap(&mut self, a: usize, b: usize) {

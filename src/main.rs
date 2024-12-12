@@ -5,8 +5,8 @@ use keyboard_layout_optimizer::keyboard_layout::*;
 use keyboard_layout_optimizer::n_gram::NGramDB;
 
 fn main() -> Result<(), std::io::Error> {
-    let source_paths = vec![Path::new("data/ja.txt"), Path::new("data/en.txt")];
-    let db_path = Path::new("data/ja_en.db");
+    let source_paths = vec![Path::new("data/ja.txt")];
+    let db_path = Path::new("data/ja.db");
     if !db_path.exists() {
         let _ = NGramDB::new(&source_paths, db_path).expect("Failed to create NGramDB");
     }
@@ -32,12 +32,12 @@ fn main() -> Result<(), std::io::Error> {
     let tri_grams = n_gram_db
         .get_tri_grams(&usable_chars)
         .expect("Failed to evaluate qwerty");
-    let score = qwerty.evaluate(&physical_layout, &tri_grams);
-    println!("qwerty score: {}", score);
+    let (score_left, score_right) = qwerty.evaluate(&physical_layout, &tri_grams);
+    println!("qwerty score: {}", score_left + score_right);
 
     let algorithm = Genetic::new(512);
 
-    algorithm.optimize(&physical_layout, &usable_chars, &tri_grams, 30000);
+    algorithm.optimize(&physical_layout, &usable_chars, &tri_grams, 20000);
 
     Ok(())
 }

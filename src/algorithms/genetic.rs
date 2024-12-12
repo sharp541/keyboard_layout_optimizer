@@ -94,6 +94,10 @@ impl Genetic {
             "graphs/best_scores_{}_{}.png",
             self.population_size, iterations
         );
+        let max_score = *best_scores
+            .iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
         let root = BitMapBackend::new(&file_name, (640, 480)).into_drawing_area();
         root.fill(&WHITE).unwrap();
         let mut chart = ChartBuilder::on(&root)
@@ -101,7 +105,7 @@ impl Genetic {
             .margin(10)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_cartesian_2d(0..iterations, 1.0f32..2.0f32)
+            .build_cartesian_2d(0..iterations, 0.0f32..max_score)
             .unwrap();
 
         chart.configure_mesh().draw().unwrap();
@@ -126,12 +130,19 @@ impl Genetic {
 #[derive(Debug, Clone)]
 struct Individual {
     layout: LogicalLayout,
+    score_left: f32,
+    score_right: f32,
     score: f32,
 }
 
 impl<'a> Individual {
     fn new(layout: LogicalLayout) -> Self {
-        Self { layout, score: 0.0 }
+        Self {
+            layout,
+            score_left: 0.0,
+            score_right: 0.0,
+            score: 0.0,
+        }
     }
 
     fn evaluate(
@@ -139,7 +150,10 @@ impl<'a> Individual {
         physical_layout: &PhysicalLayout,
         tri_grams: &HashMap<LogicalNGram<3>, f32>,
     ) {
-        self.score = self.layout.evaluate(physical_layout, tri_grams);
+        let (score_left, score_right) = self.layout.evaluate(physical_layout, tri_grams);
+        self.score_left = score_left;
+        self.score_right = score_right;
+        self.score = (score_left + score_right) / 2.0;
     }
 
     fn cycle_crossover(&self, other: &Self, rng: &mut fastrand::Rng) -> (Self, Self) {

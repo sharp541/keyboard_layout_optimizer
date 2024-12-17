@@ -98,6 +98,10 @@ impl Genetic {
             .iter()
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap();
+        let min_score = *best_scores
+            .iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
         let root = BitMapBackend::new(&file_name, (640, 480)).into_drawing_area();
         root.fill(&WHITE).unwrap();
         let mut chart = ChartBuilder::on(&root)
@@ -105,7 +109,7 @@ impl Genetic {
             .margin(10)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_cartesian_2d(0..iterations, 0.0f32..max_score)
+            .build_cartesian_2d(0..iterations, min_score..max_score)
             .unwrap();
 
         chart.configure_mesh().draw().unwrap();

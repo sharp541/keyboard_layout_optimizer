@@ -54,8 +54,8 @@ fn main() -> Result<(), std::io::Error> {
         's', 'n', 'z', 'x', 'c', 'v', 'f', 'b', 'h', 'j', 'l', '/',
     ];
     let custom_layout = vec![
-        'm', 'e', 'd', 'r', 'f', 'x', 'w', 'p', 'l', 'z', 's', 'a', 'i', 't', ',', 'c', 'n', 'o',
-        'u', 'y', 'g', 'q', '.', 'k', 'j', 'v', 'h', '/', '!', 'b',
+        'q', 'r', 'e', 'd', 'g', 'j', 'w', 'b', ',', 'l', 'k', 't', 'a', 'i', 's', 'm', 'n', 'o',
+        'u', 'h', 'v', 'x', 'c', '.', 'z', 'p', 'y', '/', ';', 'f',
     ];
 
     let qwerty = LogicalLayout::from_usable_chars(&normal_physical_layout, qwerty_layout.clone());
@@ -78,9 +78,9 @@ fn main() -> Result<(), std::io::Error> {
     let score = custom.evaluate(&physical_layout, &tri_grams);
     println!("custom score: {}", score);
 
-    // let algorithm = Genetic::new(512);
+    let algorithm = Genetic::new(512);
 
-    // algorithm.optimize(&physical_layout, &usable_chars, &tri_grams, 20000);
+    algorithm.optimize(&physical_layout, &usable_chars, &tri_grams, 50000);
 
     Ok(())
 }

@@ -17,6 +17,9 @@ fn main() -> Result<(), std::io::Error> {
         [1.6, 1.3, 1.1, 1.0, 2.0, 2.0, 1.0, 1.1, 1.3, 2.0],
         [3.2, 3.6, 2.3, 1.6, 3.0, 3.0, 1.6, 10e10, 10e10, 3.2],
     ];
+    let mut physical_layout = PhysicalLayout::new(cost_table).expect("Invalid cost table");
+    physical_layout.calculate_tri_gram_cost();
+
     let usable_chars = vec![
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
         's', 't', 'u', 'v', 'w', 'x', 'y', 'z', ',', '.',
@@ -30,15 +33,22 @@ fn main() -> Result<(), std::io::Error> {
         'l', ';', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
     ];
     let ohnishi_layout = vec![
-        'q', 'l', 'u', ',', '.', 'f', 'w', 'r', 'y', 'p', 'e', 'i', 'a', 'o', '/', 'k', 't', 'n',
-        's', 'h', 'z', 'x', 'c', 'v', ';', 'g', 'd', 'm', 'j', 'b',
+        'q', 'l', 'u', ';', '.', 'f', 'w', 'r', 'y', 'p', 'e', 'i', 'a', 'o', ',', 'k', 't', 'n',
+        's', 'h', 'z', 'x', 'c', 'v', '/', 'g', 'd', 'm', 'j', 'b',
+    ];
+    let astarte_layout = vec![
+        'q', 'p', 'u', 'y', ',', 'j', 'd', 'h', 'g', 'w', 'i', 'o', 'e', 'a', '.', 'k', 't', 'n',
+        's', 'r', 'z', 'x', '/', 'c', ';', 'm', 'l', 'f', 'b', 'v',
+    ];
+
+    let eucalyn_layout = vec![
+        'q', 'w', ',', '.', ';', 'm', 'r', 'd', 'y', 'p', 'a', 'o', 'e', 'i', 'u', 'g', 't', 'k',
+        's', 'n', 'z', 'x', 'c', 'v', 'f', 'b', 'h', 'j', 'l', '/',
     ];
     let custom_layout = vec![
         'm', 'e', 'd', 'r', 'f', 'x', 'w', 'p', 'l', 'z', 's', 'a', 'i', 't', ',', 'c', 'n', 'o',
         'u', 'y', 'g', 'q', '.', 'k', 'j', 'v', 'h', '/', '!', 'b',
     ];
-    let mut physical_layout = PhysicalLayout::new(cost_table).expect("Invalid cost table");
-    physical_layout.calculate_tri_gram_cost();
 
     let qwerty = LogicalLayout::from_usable_chars(&physical_layout, qwerty_layout.clone());
     let (score_left, score_right) = qwerty.evaluate(&physical_layout, &tri_grams);
@@ -47,6 +57,14 @@ fn main() -> Result<(), std::io::Error> {
     let ohnishi = LogicalLayout::from_usable_chars(&physical_layout, ohnishi_layout.clone());
     let (score_left, score_right) = ohnishi.evaluate(&physical_layout, &tri_grams);
     println!("ohnishi score: {}", score_left + score_right);
+
+    let astarte = LogicalLayout::from_usable_chars(&physical_layout, astarte_layout.clone());
+    let (score_left, score_right) = astarte.evaluate(&physical_layout, &tri_grams);
+    println!("astarte score: {}", score_left + score_right);
+
+    let eucalyn = LogicalLayout::from_usable_chars(&physical_layout, eucalyn_layout.clone());
+    let (score_left, score_right) = eucalyn.evaluate(&physical_layout, &tri_grams);
+    println!("eucalyn score: {}", score_left + score_right);
 
     let custom = LogicalLayout::from_usable_chars(&physical_layout, custom_layout.clone());
     let (score_left, score_right) = custom.evaluate(&physical_layout, &tri_grams);

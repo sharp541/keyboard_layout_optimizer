@@ -36,35 +36,19 @@ impl<'a> LogicalLayout {
         &self,
         physical_layout: &PhysicalLayout,
         tri_grams: &HashMap<LogicalNGram<3>, f32>,
-    ) -> (f32, f32) {
-        let cost_left = &physical_layout
-            .left_grams
+    ) -> f32 {
+        let cost = tri_grams
             .par_iter()
-            .map(|n_gram: &PhysicalNGram<3>| -> f32 {
-                let logical_n_gram = LogicalNGram::new([
-                    self.get(n_gram.get(0)),
-                    self.get(n_gram.get(1)),
-                    self.get(n_gram.get(2)),
+            .map(|(n_gram, score)| -> f32 {
+                let physical_n_gram = PhysicalNGram::new([
+                    self.get_char_index(n_gram.get(0)),
+                    self.get_char_index(n_gram.get(1)),
+                    self.get_char_index(n_gram.get(2)),
                 ]);
-                tri_grams.get(&logical_n_gram).unwrap_or(&0.0)
-                    * physical_layout.get_tri_gram_cost(n_gram)
+                *score * physical_layout.get_tri_gram_cost(&physical_n_gram)
             })
             .sum();
-
-        let cost_right = &physical_layout
-            .right_grams
-            .par_iter()
-            .map(|n_gram: &PhysicalNGram<3>| -> f32 {
-                let logical_n_gram = LogicalNGram::new([
-                    self.get(n_gram.get(0)),
-                    self.get(n_gram.get(1)),
-                    self.get(n_gram.get(2)),
-                ]);
-                tri_grams.get(&logical_n_gram).unwrap_or(&0.0)
-                    * physical_layout.get_tri_gram_cost(n_gram)
-            })
-            .sum();
-        (*cost_left, *cost_right)
+        cost
     }
 
     pub fn swap(&mut self, a: usize, b: usize) {

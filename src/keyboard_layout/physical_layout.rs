@@ -12,8 +12,6 @@ pub struct PhysicalLayout {
     cost_matrix: [[f32; NUM_COLS]; NUM_ROWS],
     mapping: [(usize, usize); NUM_COLS * NUM_ROWS],
     tri_gram_cost: HashMap<PhysicalNGram<3>, f32>,
-    pub left_grams: Vec<PhysicalNGram<3>>,
-    pub right_grams: Vec<PhysicalNGram<3>>,
 }
 
 impl PhysicalLayout {
@@ -30,8 +28,6 @@ impl PhysicalLayout {
             cost_matrix,
             mapping,
             tri_gram_cost,
-            left_grams: get_left_grams(),
-            right_grams: get_right_grams(),
         })
     }
 

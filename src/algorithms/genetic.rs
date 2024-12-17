@@ -130,19 +130,12 @@ impl Genetic {
 #[derive(Debug, Clone)]
 struct Individual {
     layout: LogicalLayout,
-    score_left: f32,
-    score_right: f32,
     score: f32,
 }
 
 impl<'a> Individual {
     fn new(layout: LogicalLayout) -> Self {
-        Self {
-            layout,
-            score_left: 0.0,
-            score_right: 0.0,
-            score: 0.0,
-        }
+        Self { layout, score: 0.0 }
     }
 
     fn evaluate(
@@ -150,10 +143,7 @@ impl<'a> Individual {
         physical_layout: &PhysicalLayout,
         tri_grams: &HashMap<LogicalNGram<3>, f32>,
     ) {
-        let (score_left, score_right) = self.layout.evaluate(physical_layout, tri_grams);
-        self.score_left = score_left;
-        self.score_right = score_right;
-        self.score = (score_left + score_right) / 2.0;
+        self.score = self.layout.evaluate(physical_layout, tri_grams);
     }
 
     fn cycle_crossover(&self, other: &Self, rng: &mut fastrand::Rng) -> (Self, Self) {

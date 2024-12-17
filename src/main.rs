@@ -77,10 +77,11 @@ fn main() -> Result<(), std::io::Error> {
     let custom = LogicalLayout::from_usable_chars(&physical_layout, custom_layout.clone());
     let score = custom.evaluate(&physical_layout, &tri_grams);
     println!("custom score: {}", score);
+    physical_layout.print(&custom.output());
 
-    let algorithm = Genetic::new(512);
+    // let algorithm = Genetic::new(512);
 
-    algorithm.optimize(&physical_layout, &usable_chars, &tri_grams, 50000);
+    // algorithm.optimize(&physical_layout, &usable_chars, &tri_grams, 50000);
 
     Ok(())
 }

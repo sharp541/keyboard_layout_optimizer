@@ -54,40 +54,61 @@ impl PhysicalLayout {
             Some((row, col)) => {
                 return self.cost_matrix[*row][*col];
             }
-            None => return 10.0, // 未知の文字
+            None => return 5.0, // 未知の文字
         };
     }
 
-    fn row_cost(&self, key1: usize, key2: usize) -> f32 {
+    fn move_cost(&self, key1: usize, key2: usize) -> f32 {
         let (row1, col1) = match self.coord(key1) {
             Some(coord) => coord,
-            None => return 10.0,
+            None => return 5.0,
         };
         let (row2, col2) = match self.coord(key2) {
             Some(coord) => coord,
-            None => return 10.0,
+            None => return 5.0,
         };
-        let same_column: i32 = if col1 == col2 { 2 } else { 0 };
+        let same_column: i32 = if col1 == col2 { 4 } else { 0 };
         let col_diff = max(0, (col1 as i32 - col2 as i32).abs() - 2);
         let row_diff = max(0, (row1 as i32 - row2 as i32).abs() - 1);
         (row_diff + same_column + col_diff).abs() as f32
     }
 
     fn stroke_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
-        let mut stroke_cost = 0.0;
-        let position_cost = self.position_cost(n_gram.get(0));
-        for i in 0..2 {
-            let key1 = n_gram.get(i);
-            let key2 = n_gram.get(i + 1);
-            let hand1 = self.hand(key1);
-            let hand2 = self.hand(key2);
-            if hand1.same(hand2) {
-                stroke_cost += self.row_cost(key1, key2);
-            } else {
-                stroke_cost += 1.0;
+        let key1 = n_gram.get(0);
+        let key2 = n_gram.get(1);
+        let key3 = n_gram.get(2);
+        let first_hand = self.hand(key1);
+        let pattern = (
+            true,
+            first_hand == self.hand(key2),
+            first_hand == self.hand(key3),
+        );
+        let cost = match pattern {
+            (true, true, true) => {
+                let position_cost = self.position_cost(key1);
+                let move_cost1 = self.move_cost(key1, key2);
+                let move_cost2 = self.move_cost(key2, key3);
+                let move_cost3 = self.move_cost(key3, key1);
+                position_cost + (move_cost1 + move_cost2 + move_cost3)
             }
-        }
-        position_cost.log2() + (1.0 + stroke_cost).log2()
+            (true, true, false) => {
+                let position_cost = self.position_cost(key1);
+                let move_cost = self.move_cost(key1, key2);
+                position_cost + move_cost + self.position_cost(key3)
+            }
+            (true, false, true) => {
+                let position_cost = self.position_cost(key1);
+                let move_cost = self.move_cost(key1, key3);
+                position_cost + move_cost + self.position_cost(key2)
+            }
+            (true, false, false) => {
+                let position_cost = self.position_cost(key2);
+                let move_cost = self.move_cost(key2, key3);
+                position_cost + move_cost + self.position_cost(key1)
+            }
+            _ => panic!("Invalid pattern"),
+        };
+        (1.0 + cost).log2()
     }
 
     pub fn len(&self) -> usize {
@@ -177,6 +198,26 @@ fn get_right_grams() -> Vec<PhysicalNGram<3>> {
         }
     }
     grams
+}
+
+pub fn get_left_keys() -> Vec<usize> {
+    let mut keys = Vec::new();
+    for i in 0..NUM_ROWS {
+        for j in 0..NUM_COLS / 2 {
+            keys.push(i * NUM_COLS + j);
+        }
+    }
+    keys
+}
+
+pub fn get_right_keys() -> Vec<usize> {
+    let mut keys = Vec::new();
+    for i in 0..NUM_ROWS {
+        for j in NUM_COLS / 2..NUM_COLS {
+            keys.push(i * NUM_COLS + j);
+        }
+    }
+    keys
 }
 
 #[cfg(test)]

@@ -21,23 +21,40 @@ fn main() -> Result<(), std::io::Error> {
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
         's', 't', 'u', 'v', 'w', 'x', 'y', 'z', ',', '.',
     ];
+    let tri_grams = n_gram_db
+        .get_tri_grams(&usable_chars)
+        .expect("Failed to get tri grams");
+
     let qwerty_layout = vec![
         'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k',
         'l', ';', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
+    ];
+    let ohnishi_layout = vec![
+        'q', 'l', 'u', ',', '.', 'f', 'w', 'r', 'y', 'p', 'e', 'i', 'a', 'o', '/', 'k', 't', 'n',
+        's', 'h', 'z', 'x', 'c', 'v', ';', 'g', 'd', 'm', 'j', 'b',
+    ];
+    let custom_layout = vec![
+        'm', 'e', 'd', 'r', 'f', 'x', 'w', 'p', 'l', 'z', 's', 'a', 'i', 't', ',', 'c', 'n', 'o',
+        'u', 'y', 'g', 'q', '.', 'k', 'j', 'v', 'h', '/', '!', 'b',
     ];
     let mut physical_layout = PhysicalLayout::new(cost_table).expect("Invalid cost table");
     physical_layout.calculate_tri_gram_cost();
 
     let qwerty = LogicalLayout::from_usable_chars(&physical_layout, qwerty_layout.clone());
-    let tri_grams = n_gram_db
-        .get_tri_grams(&usable_chars)
-        .expect("Failed to evaluate qwerty");
     let (score_left, score_right) = qwerty.evaluate(&physical_layout, &tri_grams);
     println!("qwerty score: {}", score_left + score_right);
 
-    let algorithm = Genetic::new(512);
+    let ohnishi = LogicalLayout::from_usable_chars(&physical_layout, ohnishi_layout.clone());
+    let (score_left, score_right) = ohnishi.evaluate(&physical_layout, &tri_grams);
+    println!("ohnishi score: {}", score_left + score_right);
 
-    algorithm.optimize(&physical_layout, &usable_chars, &tri_grams, 20000);
+    let custom = LogicalLayout::from_usable_chars(&physical_layout, custom_layout.clone());
+    let (score_left, score_right) = custom.evaluate(&physical_layout, &tri_grams);
+    println!("custom score: {}", score_left + score_right);
+
+    // let algorithm = Genetic::new(512);
+
+    // algorithm.optimize(&physical_layout, &usable_chars, &tri_grams, 20000);
 
     Ok(())
 }

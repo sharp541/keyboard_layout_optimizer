@@ -3,7 +3,7 @@ use plotters::prelude::*;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::keyboard_layout::{LogicalLayout, PhysicalLayout};
 use crate::n_gram::LogicalNGram;
@@ -26,13 +26,16 @@ impl Genetic {
         usable_chars: &[char],
         tri_grams: &HashMap<LogicalNGram<3>, f32>,
         iterations: usize,
+        shuffle: bool,
     ) {
         let initial_layout =
             LogicalLayout::from_usable_chars(physical_layout, usable_chars.to_vec());
         let mut layout = initial_layout.clone().output();
         let mut population = Vec::with_capacity(self.population_size);
         for _ in 0..self.population_size {
-            fastrand::shuffle(&mut layout);
+            if shuffle {
+                fastrand::shuffle(&mut layout);
+            }
             let copy = LogicalLayout::from_usable_chars(physical_layout, layout.clone());
             let individual = Individual::new(copy);
             population.push(individual);
@@ -150,29 +153,6 @@ impl<'a> Individual {
         self.score = self.layout.evaluate(physical_layout, tri_grams);
     }
 
-    fn cycle_crossover(&self, other: &Self, rng: &mut fastrand::Rng) -> (Self, Self) {
-        let mut child1 = self.layout.clone();
-        let mut child2 = other.layout.clone();
-
-        let mut cycle: HashSet<usize> = HashSet::new();
-        let mut start = rng.usize(0..child1.len());
-        while cycle.insert(start) {
-            start = self.layout.get_char_index(other.layout.get(start));
-        }
-
-        match cycle.len() {
-            0..2 => (),
-            _ => {
-                cycle.iter().for_each(|i| {
-                    child1.set(*i, other.layout.get(*i).clone());
-                    child2.set(*i, self.layout.get(*i).clone());
-                });
-            }
-        }
-
-        (Individual::new(child1), Individual::new(child2))
-    }
-
     fn reverse_mutation(&mut self, rng: &mut fastrand::Rng) {
         let a = rng.usize(0..self.layout.len());
         let b = rng.usize(0..self.layout.len());
@@ -250,34 +230,6 @@ mod tests {
         test_individual.reverse_mutation(&mut rng);
 
         assert_ne!(test_individual.layout(), original_layout);
-    }
-
-    #[test]
-    fn test_cycle_crossover() {
-        let cost_table = [
-            [3.7, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.7], // 上段
-            [3.0, 1.3, 1.1, 1.0, 1.6, 1.6, 1.0, 1.1, 1.3, 3.0], // 中段（ホームポジション）
-            [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 10e10, 10e10, 3.2], // 下段
-        ];
-        let physical = PhysicalLayout::new(cost_table).expect("Invalid cost table");
-        let usable_chars = vec![
-            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
-            'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', ',', '.',
-        ];
-        let usable_chars2 = vec![
-            'z', ',', '.', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
-            'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y',
-        ];
-        let logical1 = LogicalLayout::from_usable_chars(&physical, usable_chars);
-        let logical2 = LogicalLayout::from_usable_chars(&physical, usable_chars2);
-
-        let parent1 = Individual::new(logical1);
-        let parent2 = Individual::new(logical2);
-        let mut rng = fastrand::Rng::new();
-
-        let (child1, _) = parent1.cycle_crossover(&parent2, &mut rng);
-
-        assert_ne!(child1.layout(), parent1.layout());
     }
 
     #[test]

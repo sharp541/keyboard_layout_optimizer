@@ -54,7 +54,7 @@ impl PhysicalLayout {
         };
     }
 
-    fn move_cost(&self, key1: usize, key2: usize) -> f32 {
+    fn relative_cost(&self, key1: usize, key2: usize) -> f32 {
         let (row1, col1) = match self.coord(key1) {
             Some(coord) => coord,
             None => return 5.0,
@@ -82,25 +82,25 @@ impl PhysicalLayout {
         let cost = match pattern {
             (true, true, true) => {
                 let position_cost = self.position_cost(key1);
-                let move_cost1 = self.move_cost(key1, key2);
-                let move_cost2 = self.move_cost(key2, key3);
-                let move_cost3 = self.move_cost(key3, key1);
-                position_cost + (move_cost1 + move_cost2 + move_cost3)
+                let relative_cost1 = self.relative_cost(key1, key2);
+                let relative_cost2 = self.relative_cost(key2, key3);
+                let relative_cost3 = self.relative_cost(key3, key1);
+                position_cost + (relative_cost1 + relative_cost2 + relative_cost3)
             }
             (true, true, false) => {
                 let position_cost = self.position_cost(key1);
-                let move_cost = self.move_cost(key1, key2);
-                position_cost + move_cost + self.position_cost(key3)
+                let relative_cost = self.relative_cost(key1, key2);
+                position_cost + relative_cost + self.position_cost(key3)
             }
             (true, false, true) => {
                 let position_cost = self.position_cost(key1);
-                let move_cost = self.move_cost(key1, key3);
-                position_cost + move_cost + self.position_cost(key2)
+                let relative_cost = self.relative_cost(key1, key3);
+                position_cost + relative_cost + self.position_cost(key2)
             }
             (true, false, false) => {
                 let position_cost = self.position_cost(key2);
-                let move_cost = self.move_cost(key2, key3);
-                position_cost + move_cost + self.position_cost(key1)
+                let relative_cost = self.relative_cost(key2, key3);
+                position_cost + relative_cost + self.position_cost(key1)
             }
             _ => panic!("Invalid pattern"),
         };

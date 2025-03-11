@@ -13,9 +13,9 @@ fn main() -> Result<(), std::io::Error> {
     let n_gram_db = NGramDB::load(db_path).expect("Failed to load NGramDB");
 
     let cost_table: [[f32; NUM_COLS]; NUM_ROWS] = [
-        [3.5, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.5],
+        [3.0, 2.4, 2.0, 2.2, 3.6, 3.6, 2.2, 2.0, 2.4, 3.0],
         [1.6, 1.3, 1.1, 1.0, 2.0, 2.0, 1.0, 1.1, 1.3, 2.0],
-        [3.2, 3.6, 2.3, 1.6, 3.0, 3.0, 1.6, 10e10, 10e10, 3.2],
+        [3.2, 3.6, 2.3, 1.6, 3.2, 3.2, 1.6, 10e10, 10e10, 3.2],
     ];
     let normal_cost_table: [[f32; NUM_COLS]; NUM_ROWS] = [
         [3.5, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.5],
@@ -32,9 +32,6 @@ fn main() -> Result<(), std::io::Error> {
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
         's', 't', 'u', 'v', 'w', 'x', 'y', 'z', ',', '.',
     ];
-    let tri_grams = n_gram_db
-        .get_tri_grams(&usable_chars)
-        .expect("Failed to get tri grams");
 
     let qwerty_layout = vec![
         'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k',
@@ -54,9 +51,14 @@ fn main() -> Result<(), std::io::Error> {
         's', 'n', 'z', 'x', 'c', 'v', 'f', 'b', 'h', 'j', 'l', '/',
     ];
     let custom_layout = vec![
-        'q', 'r', 'e', 'd', 'g', 'j', 'w', 'b', ',', 'l', 'k', 't', 'a', 'i', 's', 'm', 'n', 'o',
-        'u', 'h', 'v', 'x', 'c', '.', 'z', 'p', 'y', '/', ';', 'f',
+        'z', 'r', 'e', 'd', 'v', 'c', 'w', 'p', 'f', 'b',
+        'k', 't', 'a', 'i', 's', 'g', 'n', 'o', 'u', 'h',
+        'q', 'x', '*', 'y', '/', 'j', 'm', '+', ';', 'l',
     ];
+
+    let tri_grams = n_gram_db
+        .get_tri_grams(&custom_layout)
+        .expect("Failed to get tri grams");
 
     let qwerty = LogicalLayout::from_usable_chars(&normal_physical_layout, qwerty_layout.clone());
     let score = qwerty.evaluate(&normal_physical_layout, &tri_grams);
@@ -81,7 +83,7 @@ fn main() -> Result<(), std::io::Error> {
 
     // let algorithm = Genetic::new(512);
 
-    // algorithm.optimize(&physical_layout, &usable_chars, &tri_grams, 50000);
+    // algorithm.optimize(&physical_layout, &custom_layout, &tri_grams, 10000, false);
 
     Ok(())
 }

@@ -50,10 +50,15 @@ fn main() -> Result<(), std::io::Error> {
         'q', 'w', ',', '.', ';', 'm', 'r', 'd', 'y', 'p', 'a', 'o', 'e', 'i', 'u', 'g', 't', 'k',
         's', 'n', 'z', 'x', 'c', 'v', 'f', 'b', 'h', 'j', 'l', '/',
     ];
+    // let custom_layout = vec![
+    //     'z', 'r', 'e', 'd', 'v', 'c', 'w', 'p', 'f', 'b',
+    //     'k', 't', 'a', 'i', 's', 'g', 'n', 'o', 'u', 'h',
+    //     'q', 'x', '*', 'y', '/', 'j', 'm', '+', ';', 'l',
+    // ];
     let custom_layout = vec![
-        'z', 'r', 'e', 'd', 'v', 'c', 'w', 'p', 'f', 'b',
-        'k', 't', 'a', 'i', 's', 'g', 'n', 'o', 'u', 'h',
-        'q', 'x', '*', 'y', '/', 'j', 'm', '+', ';', 'l',
+        'q', 'r', 'e', 'd', '.', ',', 'w', 'b', 'g', 'l',
+        'k', 't', 'a', 'i', 's', 'y', 'n', 'o', 'u', 'h',
+        'v', 'x', 'c', 'j', 'z', 'p', 'm', '+', '*', 'f',
     ];
 
     let tri_grams = n_gram_db
@@ -81,9 +86,9 @@ fn main() -> Result<(), std::io::Error> {
     println!("custom score: {}", score);
     physical_layout.print(&custom.output());
 
-    // let algorithm = Genetic::new(512);
+    let algorithm = Genetic::new(512);
 
-    // algorithm.optimize(&physical_layout, &custom_layout, &tri_grams, 10000, false);
+    algorithm.optimize(&physical_layout, &custom_layout, &tri_grams, 10000, false);
 
     Ok(())
 }

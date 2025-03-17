@@ -43,7 +43,6 @@ impl Genetic {
 
         let mut best_layout = Individual::new(initial_layout);
         best_layout.evaluate(physical_layout, tri_grams);
-        let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
 
         let mut best_scores: Vec<f32> = Vec::with_capacity(iterations);
 
@@ -61,14 +60,11 @@ impl Genetic {
                     .expect("Failed to compare scores")
             });
 
-            // Keep elite individuals
-            new_population.extend(population.iter().take(elite_num).cloned());
-
             let sum = population.iter().map(|ind| ind.score).sum::<f32>();
             let weights: Vec<f32> = population.iter().map(|ind| ind.score / sum).collect();
             let dist = WeightedIndex::new(weights).unwrap();
             let mut rng = thread_rng();
-            let mut children: Vec<Individual> = (0..self.population_size - elite_num)
+            let mut children: Vec<Individual> = (0..self.population_size)
                 .into_iter()
                 .map(|_| population[dist.sample(&mut rng)].clone())
                 .collect();
@@ -175,20 +171,17 @@ impl<'a> Individual {
     }
 
     fn random_mutation(&mut self, rng: &mut fastrand::Rng) {
-        let mutation_num = rng.usize(0..3);
-        for _ in 0..mutation_num {
-            let a = rng.usize(0..self.layout.len());
-            let b = rng.usize(0..self.layout.len());
-            self.layout.swap(a, b);
-        }
+        let a = rng.usize(0..self.layout.len());
+        let b = rng.usize(0..self.layout.len());
+        self.layout.swap(a, b);
     }
 
     fn mutate(&mut self, rng: &mut fastrand::Rng) {
-        let mutation_type = rng.u8(0..6);
+        let mutation_type = rng.u8(0..15);
         match mutation_type {
             0 => (),
-            1 => self.reverse_mutation(rng),
-            2 => self.shift_mutation(rng),
+            1 | 2 => self.reverse_mutation(rng),
+            3 | 4 => self.shift_mutation(rng),
             _ => self.random_mutation(rng),
         }
     }

@@ -85,22 +85,22 @@ impl PhysicalLayout {
                 let relative_cost1 = self.relative_cost(key1, key2);
                 let relative_cost2 = self.relative_cost(key2, key3);
                 let relative_cost3 = self.relative_cost(key3, key1);
-                position_cost + (relative_cost1 + relative_cost2 + relative_cost3)
+                position_cost * (relative_cost1 + relative_cost2 + relative_cost3)
             }
             (true, true, false) => {
                 let position_cost = self.position_cost(key1);
                 let relative_cost = self.relative_cost(key1, key2);
-                position_cost + relative_cost + self.position_cost(key3)
+                position_cost * relative_cost + self.position_cost(key3)
             }
             (true, false, true) => {
                 let position_cost = self.position_cost(key1);
                 let relative_cost = self.relative_cost(key1, key3);
-                position_cost + relative_cost + self.position_cost(key2)
+                position_cost * relative_cost + self.position_cost(key2)
             }
             (true, false, false) => {
                 let position_cost = self.position_cost(key2);
                 let relative_cost = self.relative_cost(key2, key3);
-                position_cost + relative_cost + self.position_cost(key1)
+                position_cost * relative_cost + self.position_cost(key1)
             }
             _ => panic!("Invalid pattern"),
         };

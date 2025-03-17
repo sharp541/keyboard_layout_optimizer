@@ -14,8 +14,8 @@ fn main() -> Result<(), std::io::Error> {
 
     let cost_table: [[f32; NUM_COLS]; NUM_ROWS] = [
         [3.0, 2.1, 2.0, 2.5, 3.6, 3.6, 2.5, 2.0, 2.1, 3.0],
-        [1.6, 1.3, 1.1, 1.0, 2.0, 2.0, 1.0, 1.1, 1.3, 2.0],
-        [3.2, 3.6, 2.3, 1.6, 3.2, 3.2, 1.6, 10e10, 10e10, 3.2],
+        [1.6, 1.3, 1.1, 1.0, 2.2, 2.2, 1.0, 1.1, 1.3, 2.0],
+        [3.2, 3.6, 2.6, 1.6, 3.2, 3.2, 1.6, 10e10, 10e10, 3.2],
     ];
     let normal_cost_table: [[f32; NUM_COLS]; NUM_ROWS] = [
         [3.5, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.5],
@@ -51,8 +51,8 @@ fn main() -> Result<(), std::io::Error> {
         's', 'n', 'z', 'x', 'c', 'v', 'f', 'b', 'h', 'j', 'l', '/',
     ];
     let custom_layout = vec![
-        'z', 'r', 'e', 'd', '/', '*', 'w', 'p', 'f', 'b', // upper row
-        'k', 't', 'a', 'i', 's', 'g', 'n', 'o', 'u', 'h', // middle row
+        'z', 'r', 'e', 'd', '/', '*', 'w', 'p', 'g', 'b', // upper row
+        'k', 't', 'a', 'i', 's', 'f', 'n', 'o', 'u', 'h', // middle row
         'q', 'x', 'c', 'y', 'v', 'j', 'm', '+', ';', 'l', // lower row
     ];
 
@@ -81,9 +81,9 @@ fn main() -> Result<(), std::io::Error> {
     println!("custom score: {}", score);
     physical_layout.print(&custom.output());
 
-    let algorithm = Genetic::new(1024);
+    let algorithm = Genetic::new(512);
 
-    algorithm.optimize(&physical_layout, &custom_layout, &tri_grams, 10000, false);
+    algorithm.optimize(&physical_layout, &custom_layout, &tri_grams, 5000, false);
 
     Ok(())
 }

@@ -69,6 +69,28 @@ impl PhysicalLayout {
         (row_diff + same_column + col_diff).abs() as f32
     }
 
+    fn roll_cost(&self, key1: usize, key2: usize, key3: usize) -> f32 {
+        let (row1, col1) = match self.coord(key1) {
+            Some(coord) => coord,
+            None => return 5.0,
+        };
+        let (row2, col2) = match self.coord(key2) {
+            Some(coord) => coord,
+            None => return 5.0,
+        };
+        let (row3, col3) = match self.coord(key3) {
+            Some(coord) => coord,
+            None => return 5.0,
+        };
+
+        let same_column: i32 = if col1 == col2 && col2 == col3 { 8 } else { 0 };
+        let not_roll_penalty = if (col1 <= col2 && col2 <= col3) && (col1 >= col2 && col2 >= col3) { 0 } else { 8 };
+        let row_diff = max(0, (row1 as i32 - row2 as i32).abs() - 1) +
+            max(0, (row2 as i32 - row3 as i32).abs() - 1);
+
+        (same_column + not_roll_penalty + row_diff) as f32
+    }
+
     fn stroke_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
         let key1 = n_gram.get(0);
         let key2 = n_gram.get(1);
@@ -82,10 +104,8 @@ impl PhysicalLayout {
         let cost = match pattern {
             (true, true, true) => {
                 let position_cost = self.position_cost(key1);
-                let relative_cost1 = self.relative_cost(key1, key2);
-                let relative_cost2 = self.relative_cost(key2, key3);
-                let relative_cost3 = self.relative_cost(key3, key1);
-                position_cost * (relative_cost1 + relative_cost2 + relative_cost3)
+                let roll_cost = self.roll_cost(key1, key2, key3);
+                position_cost * roll_cost
             }
             (true, true, false) => {
                 let position_cost = self.position_cost(key1);

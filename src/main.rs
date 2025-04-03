@@ -51,9 +51,9 @@ fn main() -> Result<(), std::io::Error> {
         's', 'n', 'z', 'x', 'c', 'v', 'f', 'b', 'h', 'j', 'l', '/',
     ];
     let custom_layout = vec![
-        'z', 'r', 'e', 'd', '/', '*', 'w', 'p', 'g', 'b', // upper row
-        'k', 't', 'a', 'i', 's', 'f', 'n', 'o', 'u', 'h', // middle row
-        'q', 'x', 'c', 'y', 'v', 'j', 'm', '+', ';', 'l', // lower row
+        'z', 'y', 'r', 'd', 'b', 'v', 'x', 'e', 'p', 'c', // upper row
+        'k', 's', 'n', 't', 'm', 'w', 'a', 'o', 'i', 'u', // middle row
+        'f', 'j', 'l', 'h', 'g', 'q', '*', ';', '/', '+', // lower row
     ];
 
     let tri_grams = n_gram_db
@@ -81,9 +81,9 @@ fn main() -> Result<(), std::io::Error> {
     println!("custom score: {}", score);
     physical_layout.print(&custom.output());
 
-    let algorithm = Genetic::new(512);
+    // let algorithm = Genetic::new(512);
 
-    algorithm.optimize(&physical_layout, &custom_layout, &tri_grams, 5000, false);
+    // algorithm.optimize(&physical_layout, &custom_layout, &tri_grams, 5000, false);
 
     Ok(())
 }

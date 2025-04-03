@@ -63,7 +63,7 @@ impl PhysicalLayout {
             Some(coord) => coord,
             None => return 5.0,
         };
-        let same_column: i32 = if col1 == col2 { 4 } else { 0 };
+        let same_column: i32 = if col1 == col2 { 16 } else { 0 };
         let col_diff = max(0, (col1 as i32 - col2 as i32).abs() - 2);
         let row_diff = max(0, (row1 as i32 - row2 as i32).abs() - 1);
         (row_diff + same_column + col_diff).abs() as f32
@@ -83,7 +83,7 @@ impl PhysicalLayout {
             None => return 5.0,
         };
 
-        let same_column: i32 = if col1 == col2 && col2 == col3 { 8 } else { 0 };
+        let same_column: i32 = if col1 == col2 && col2 == col3 { 16 } else { 0 };
         let not_roll_penalty = if (col1 <= col2 && col2 <= col3) && (col1 >= col2 && col2 >= col3) { 0 } else { 8 };
         let row_diff = max(0, (row1 as i32 - row2 as i32).abs() - 1) +
             max(0, (row2 as i32 - row3 as i32).abs() - 1);

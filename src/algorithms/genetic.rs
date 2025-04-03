@@ -43,6 +43,7 @@ impl Genetic {
 
         let mut best_layout = Individual::new(initial_layout);
         best_layout.evaluate(physical_layout, tri_grams);
+        let elite_num = if self.population_size % 2 == 0 { 4 } else { 3 };
 
         let mut best_scores: Vec<f32> = Vec::with_capacity(iterations);
 
@@ -60,11 +61,14 @@ impl Genetic {
                     .expect("Failed to compare scores")
             });
 
+            // Keep elite individuals
+            new_population.extend(population.iter().take(elite_num).cloned());
+
             let sum = population.iter().map(|ind| ind.score).sum::<f32>();
             let weights: Vec<f32> = population.iter().map(|ind| ind.score / sum).collect();
             let dist = WeightedIndex::new(weights).unwrap();
             let mut rng = thread_rng();
-            let mut children: Vec<Individual> = (0..self.population_size)
+            let mut children: Vec<Individual> = (0..self.population_size - elite_num)
                 .into_iter()
                 .map(|_| population[dist.sample(&mut rng)].clone())
                 .collect();

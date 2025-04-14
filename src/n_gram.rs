@@ -1,5 +1,5 @@
 use rusqlite::{params, Connection, Result};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::fs;
 use std::path::Path;
@@ -131,7 +131,7 @@ impl NGramDB {
         Ok(n_gram_map)
     }
 
-    pub fn get_tri_grams(&self, usable_chars: &[char]) -> Result<HashMap<LogicalNGram<3>, f32>> {
+    pub fn get_tri_grams(&self, usable_chars: &HashSet<char>) -> Result<HashMap<LogicalNGram<3>, f32>> {
         let mut stmt = self
             .conn
             .prepare("SELECT n_gram, count FROM n_grams WHERE n = ?1")
@@ -205,8 +205,9 @@ mod tests {
         assert!(mono_grams.contains_key(&LogicalNGram::new(['c'])));
 
         // 3-gramを取得して確認
+        let usable_chars: HashSet<char> = ['a', 'b', 'c'].iter().cloned().collect();
         let tri_grams = n_gram_db
-            .get_tri_grams(&['a', 'b', 'c'])
+            .get_tri_grams(&usable_chars)
             .expect("Failed to get 3-grams");
         println!("{:?}", tri_grams);
         assert_eq!(tri_grams.len(), 3);
@@ -226,7 +227,7 @@ mod tests {
 
         // 3-gramを取得して確認
         let tri_grams = n_gram_db
-            .get_tri_grams(&['a', 'b', 'c'])
+            .get_tri_grams(&usable_chars)
             .expect("Failed to get 3-grams");
         assert_eq!(tri_grams.len(), 3);
         assert!(tri_grams.contains_key(&LogicalNGram::new(['a', 'b', 'c'])));

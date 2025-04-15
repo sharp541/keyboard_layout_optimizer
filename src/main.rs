@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::collections::HashSet;
 
 use keyboard_layout_optimizer::algorithms::Genetic;
 use keyboard_layout_optimizer::keyboard_layout::*;
@@ -30,7 +31,7 @@ fn main() -> Result<(), std::io::Error> {
 
     let usable_chars = vec![
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r',
-        's', 't', 'u', 'v', 'w', 'x', 'y', 'z', ',', '.',
+        's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '*', ';', '/', '+',
     ];
 
     let qwerty_layout = vec![
@@ -56,8 +57,9 @@ fn main() -> Result<(), std::io::Error> {
         'f', 'j', 'l', 'h', 'g', 'q', '*', ';', '/', '+', // lower row
     ];
 
+    let custom_layout_set: HashSet<char> = custom_layout.iter().cloned().collect();
     let tri_grams = n_gram_db
-        .get_tri_grams(&custom_layout)
+        .get_tri_grams(&custom_layout_set)
         .expect("Failed to get tri grams");
 
     let qwerty = LogicalLayout::from_usable_chars(&normal_physical_layout, qwerty_layout.clone());
@@ -81,9 +83,9 @@ fn main() -> Result<(), std::io::Error> {
     println!("custom score: {}", score);
     physical_layout.print(&custom.output());
 
-    // let algorithm = Genetic::new(512);
+    let algorithm = Genetic::new(32, 32);
 
-    // algorithm.optimize(&physical_layout, &custom_layout, &tri_grams, 5000, false);
+    algorithm.optimize(&physical_layout, &usable_chars, &n_gram_db, 10000, true);
 
     Ok(())
 }

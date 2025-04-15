@@ -57,7 +57,7 @@ impl Genetic {
             islands.push(population);
         }
 
-        let elite_num = if self.population_size % 2 == 0 { 4 } else { 3 };
+        let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
         for i in 0..iterations {
             for population in islands.iter_mut() {
                 // Evaluate population
@@ -77,22 +77,32 @@ impl Genetic {
                     best_layout = population[0].clone();
                 }
 
+                let sum = population.iter().map(|ind| ind.score).sum::<f32>();
+                let weights: Vec<f32> = population.iter().map(|ind| ind.score / sum).collect();
+                let dist = WeightedIndex::new(weights).unwrap();
+
                 // Keep elite individuals
                 let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
                 new_population.extend(population.iter().take(elite_num).cloned());
 
-                let sum = population.iter().map(|ind| ind.score).sum::<f32>();
-                let weights: Vec<f32> = population.iter().map(|ind| ind.score / sum).collect();
-                let dist = WeightedIndex::new(weights).unwrap();
-                let mut rng = thread_rng();
+                // Crossover
                 let mut children: Vec<Individual> = (0..self.population_size - elite_num)
-                    .into_iter()
-                    .map(|_| population[dist.sample(&mut rng)].clone())
+                    .into_par_iter()
+                    .map(|_| {
+                        let mut rng = thread_rng();
+                        let mut rng_fast = fastrand::Rng::new();
+                        let parent1_index = dist.sample(&mut rng);
+                        let parent2_index = dist.sample(&mut rng);
+                        if parent1_index == parent2_index {
+                            return population[parent1_index].clone();
+                        }
+                        let parent1 = &population[parent1_index];
+                        let parent2 = &population[parent2_index];
+                        let mut child = parent1.cyclic_crossover(parent2, &usable_chars, &mut rng);
+                        child.mutate(&mut rng_fast);
+                        child
+                    })
                     .collect();
-
-                children.par_iter_mut().for_each(|i| {
-                    i.mutate(&mut fastrand::Rng::new());
-                });
                 new_population.append(&mut children);
 
                 *population = new_population;
@@ -173,10 +183,10 @@ impl<'a> Individual {
         let mut new_layout = self.layout.clone();
 
         let mut usable_chars = usable_chars.clone();
-        while !&usable_chars.is_empty() {
+        while !usable_chars.is_empty() {
             let start_char = rand_pop(&mut usable_chars, rng);
             let mut self_char = start_char;
-            while !&usable_chars.is_empty() {
+            loop {
                 let self_char_index = self.layout.get_char_index(self_char);
                 let other_char = other.layout.get(self_char_index);
                 if start_char == other_char {
@@ -185,17 +195,20 @@ impl<'a> Individual {
                 usable_chars.remove(&other_char);
                 self_char = other_char;
             }
+            if usable_chars.is_empty() {
+                break;
+            }
 
             let start_char = rand_pop(&mut usable_chars, rng);
             let mut other_char = start_char;
-            while !&usable_chars.is_empty() {
+            loop {
                 let other_char_index = other.layout.get_char_index(other_char);
                 let self_char = self.layout.get(other_char_index);
+                new_layout.set(other_char_index, other_char);
                 if start_char == self_char {
                     break;
                 }
                 usable_chars.remove(&self_char);
-                new_layout.set(other_char_index, other_char);
                 other_char = self_char;
             }
         }

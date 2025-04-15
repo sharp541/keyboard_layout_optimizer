@@ -40,7 +40,6 @@ impl Genetic {
             .get_tri_grams(&usable_chars)
             .expect("Failed to get tri grams");
         best_layout.evaluate(physical_layout, &tri_grams);
-        let mut best_scores: Vec<f32> = Vec::with_capacity(iterations);
 
         // initialize
         let mut islands = Vec::with_capacity(self.island_size);
@@ -51,7 +50,8 @@ impl Genetic {
                     fastrand::shuffle(&mut layout);
                 }
                 let copy = LogicalLayout::from_usable_chars(physical_layout, layout.clone());
-                let individual = Individual::new(copy);
+                let mut individual = Individual::new(copy);
+                individual.evaluate(physical_layout, &tri_grams);
                 population.push(individual);
             }
             islands.push(population);
@@ -59,23 +59,8 @@ impl Genetic {
 
         let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
         for i in 0..iterations {
-            for population in islands.iter_mut() {
-                // Evaluate population
-                population.par_iter_mut().for_each(|i| {
-                    i.evaluate(physical_layout, &tri_grams);
-                });
-
-                // Sort population by score
-                population.sort_by(|a, b| {
-                    a.score
-                        .partial_cmp(&b.score)
-                        .expect("Failed to compare scores")
-                });
-
-                // update best layout
-                if population[0].score < best_layout.score {
-                    best_layout = population[0].clone();
-                }
+            islands.par_chunks_mut(1).for_each(|chunk| {
+                let population = &mut chunk[0];
 
                 let sum = population.iter().map(|ind| ind.score).sum::<f32>();
                 let weights: Vec<f32> = population.iter().map(|ind| ind.score / sum).collect();
@@ -106,57 +91,49 @@ impl Genetic {
                 new_population.append(&mut children);
 
                 *population = new_population;
+
+                // Evaluate population
+                population.par_iter_mut().for_each(|i| {
+                    i.evaluate(physical_layout, &tri_grams);
+                });
+
+                // Sort population by score
+                population.sort_by(|a, b| {
+                    a.score
+                        .partial_cmp(&b.score)
+                        .expect("Failed to compare scores")
+                });
+            });
+
+            // migrate best individuals
+            for idx in 0..islands.len() {
+                let best_individual = islands[idx][0].clone();
+                let next_idx = (idx + 1) % islands.len();
+                let next_population = &mut islands[next_idx];
+                next_population[-1] = best_individual;
+            };
+
+            // update best layout
+            let current_best_layout = islands.iter().min_by(|a, b| {
+                a[0].score
+                    .partial_cmp(&b[0].score)
+                    .expect("Failed to compare scores")
+            });
+            if let Some(current_best_layout) = current_best_layout {
+                if current_best_layout[0].score < best_layout.score {
+                    best_layout = current_best_layout[0].clone();
+                }
             }
 
             if i % (iterations / 10) == 0 {
                 println!("iteration: {} / {}", i, iterations);
                 println!("best score: {}", best_layout.score);
             }
-            best_scores.push(best_layout.score);
+
         }
 
         println!("best score: {}", best_layout.score);
         physical_layout.print(&best_layout.layout());
-
-        // Plot the best scores
-        let file_name = format!(
-            "graphs/best_scores_{}_{}.png",
-            self.population_size, iterations
-        );
-        let max_score = *best_scores
-            .iter()
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        let min_score = *best_scores
-            .iter()
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        let root = BitMapBackend::new(&file_name, (640, 480)).into_drawing_area();
-        root.fill(&WHITE).unwrap();
-        let mut chart = ChartBuilder::on(&root)
-            .caption("Best Scores Over Iterations", ("sans-serif", 50))
-            .margin(10)
-            .x_label_area_size(30)
-            .y_label_area_size(30)
-            .build_cartesian_2d(0..iterations, min_score..max_score)
-            .unwrap();
-
-        chart.configure_mesh().draw().unwrap();
-
-        chart
-            .draw_series(LineSeries::new(
-                best_scores.iter().enumerate().map(|(x, y)| (x, *y)),
-                &RED,
-            ))
-            .unwrap()
-            .label("Best Score")
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
-
-        chart
-            .configure_series_labels()
-            .background_style(&WHITE.mix(0.8))
-            .draw()
-            .unwrap();
     }
 }
 

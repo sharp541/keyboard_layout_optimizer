@@ -12,7 +12,7 @@ use crate::n_gram::{LogicalNGram, NGramDB};
 
 pub struct Genetic {
     population_size: usize,
-    island_size: usize
+    island_size: usize,
 }
 
 impl Genetic {
@@ -20,7 +20,10 @@ impl Genetic {
         if population_size < 3 {
             panic!("population_size must be greater than 2");
         }
-        Self { population_size, island_size }
+        Self {
+            population_size,
+            island_size,
+        }
     }
 
     pub fn optimize(
@@ -106,12 +109,14 @@ impl Genetic {
             });
 
             // migrate best individuals
-            for idx in 0..islands.len() {
-                let best_individual = islands[idx][0].clone();
-                let next_idx = (idx + 1) % islands.len();
-                let next_population = &mut islands[next_idx];
-                next_population[-1] = best_individual;
-            };
+            if i % 10 == 0 {
+                for idx in 0..islands.len() {
+                    let best_individual = islands[idx][0].clone();
+                    let next_idx = (idx + 1) % islands.len();
+                    let next_population = &mut islands[next_idx];
+                    next_population[self.population_size - 1] = best_individual;
+                }
+            }
 
             // update best layout
             let current_best_layout = islands.iter().min_by(|a, b| {
@@ -129,7 +134,6 @@ impl Genetic {
                 println!("iteration: {} / {}", i, iterations);
                 println!("best score: {}", best_layout.score);
             }
-
         }
 
         println!("best score: {}", best_layout.score);
@@ -156,7 +160,12 @@ impl<'a> Individual {
         self.score = self.layout.evaluate(physical_layout, tri_grams);
     }
 
-    fn cyclic_crossover(&self, other: &Self, usable_chars: &HashSet<char>, rng: &mut ThreadRng) -> Self {
+    fn cyclic_crossover(
+        &self,
+        other: &Self,
+        usable_chars: &HashSet<char>,
+        rng: &mut ThreadRng,
+    ) -> Self {
         let mut new_layout = self.layout.clone();
 
         let mut usable_chars = usable_chars.clone();

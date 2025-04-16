@@ -1,5 +1,4 @@
 use fastrand;
-use plotters::prelude::*;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use rand::seq::IteratorRandom;
@@ -33,6 +32,7 @@ impl Genetic {
         ngram_db: &NGramDB,
         iterations: usize,
         shuffle: bool,
+        early_stop_count: usize,
     ) {
         let initial_layout =
             LogicalLayout::from_usable_chars(physical_layout, usable_chars.to_vec());
@@ -61,6 +61,7 @@ impl Genetic {
         }
 
         let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
+        let mut count = 0;
         for i in 0..iterations {
             islands.par_chunks_mut(1).for_each(|chunk| {
                 let population = &mut chunk[0];
@@ -127,12 +128,19 @@ impl Genetic {
             if let Some(current_best_layout) = current_best_layout {
                 if current_best_layout[0].score < best_layout.score {
                     best_layout = current_best_layout[0].clone();
+                    count = 0;
                 }
             }
 
-            if i % (iterations / 10) == 0 {
+            if i % 100 == 0 {
                 println!("iteration: {} / {}", i, iterations);
                 println!("best score: {}", best_layout.score);
+            }
+
+            count += 1;
+            if count > early_stop_count {
+                println!("No improvement for {} iterations, stopping...", early_stop_count);
+                break;
             }
         }
 

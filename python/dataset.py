@@ -2,17 +2,26 @@
 from datasets import load_dataset
 from huggingface_hub import login
 import re
+import json
+import os
 
 # %%
-login("")
-dataset = load_dataset("bigcode/the-stack",
-                       data_dir="data/python", split="train", streaming=True)
+if not os.path.exists("./.env/token.json"):
+    login()
+else:
+    with open("./.env/token.json", "r", encoding="utf-8") as f:
+        config = json.load(f)
+        access_key = config["access_key"]
+        os.environ["CURL_CA_BUNDLE"] = config["ca_bundle"]
+        login(access_key)
+dataset = load_dataset("bigcode/starcoderdata",
+                       data_dir="python", split="train", streaming=True)
 
 
 # %%
 qwerty_layout = set([
     'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k',
-    'l', 'z', 'x', 'c', 'v', 'b', 'n', 'm',
+    'l', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ' '
 ])
 # %%
 sampled_files = []
@@ -27,21 +36,25 @@ for entry in dataset:
     sampled_files.append(content)
     total_size += size
 
-
+# %%
 def clean(text):
-    return re.sub(r"\*+", "*", "".join(c if c in qwerty_layout else "" for c in text.lower())).strip()
+    t = re.sub(r"\*+", "*", "".join(c if c in qwerty_layout else "" for c in text.lower())).strip()
+    # remove multiple spaces
+    t = re.sub(r"\s+", " ", t)
+    return t
 
-
-with open("en.txt", "w", encoding="utf-8") as f:
+en = "../data/en.txt"
+with open(en, "w", encoding="utf-8") as f:
     text = "".join(sampled_files)
     cleaned = clean(text)
     f.write(f"{cleaned}\n")
 
 # %%
-with open("ja.txt", "r", encoding="utf-8") as f:
+ja = "../data/ja.txt"
+with open(ja, "r", encoding="utf-8") as f:
     text = f.read()
 
-with open("ja.txt", "w", encoding="utf-8") as f:
+with open(ja, "w", encoding="utf-8") as f:
     f.write(clean(text))
 
 # %%

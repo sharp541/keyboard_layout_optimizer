@@ -6,8 +6,8 @@ use keyboard_layout_optimizer::keyboard_layout::*;
 use keyboard_layout_optimizer::n_gram::NGramDB;
 
 fn main() -> Result<(), std::io::Error> {
-    let source_paths = vec![Path::new("data/ja.txt")];
-    let db_path = Path::new("data/ja.db");
+    let source_paths = vec![Path::new("data/ja.txt"), Path::new("data/en.txt")];
+    let db_path = Path::new("data/ja_en.db");
     if !db_path.exists() {
         let _ = NGramDB::new(&source_paths, db_path).expect("Failed to create NGramDB");
     }
@@ -52,9 +52,9 @@ fn main() -> Result<(), std::io::Error> {
         's', 'n', 'z', 'x', 'c', 'v', 'f', 'b', 'h', 'j', 'l', '/',
     ];
     let custom_layout = vec![
-        'z', 'y', 'r', 'd', 'b', 'v', 'x', 'e', 'p', 'c', // upper row
-        'k', 's', 'n', 't', 'm', 'w', 'a', 'o', 'i', 'u', // middle row
-        'f', 'j', 'l', 'h', 'g', 'q', '*', ';', '/', '+', // lower row
+        'h', 'k', 'd', 'y', 'z', 'c', ';', 'e', 'p', 'v', // upper row
+        'r', 's', 't', 'n', 'm', 'g', 'a', 'o', 'i', 'u', // middle row
+        'x', 'f', 'j', 'l', 'b', 'w', 'q', '*', '/', '+', // lower row
     ];
 
     let custom_layout_set: HashSet<char> = custom_layout.iter().cloned().collect();
@@ -83,9 +83,9 @@ fn main() -> Result<(), std::io::Error> {
     println!("custom score: {}", score);
     physical_layout.print(&custom.output());
 
-    let algorithm = Genetic::new(32, 32);
+    // let algorithm = Genetic::new(32, 16);
 
-    algorithm.optimize(&physical_layout, &usable_chars, &n_gram_db, 30000, true);
+    // algorithm.optimize(&physical_layout, &usable_chars, &n_gram_db, 40000, true, 3000);
 
     Ok(())
 }

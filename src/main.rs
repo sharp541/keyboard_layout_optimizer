@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use keyboard_layout_optimizer::algorithms::Genetic;
 use keyboard_layout_optimizer::keyboard_layout::*;
 use keyboard_layout_optimizer::n_gram::NGramDB;
+use keyboard_layout_optimizer::keyboard_layout::Finger as F;
 
 fn main() -> Result<(), std::io::Error> {
     let source_paths = vec![Path::new("data/ja.txt"), Path::new("data/en.txt")];
@@ -23,10 +24,15 @@ fn main() -> Result<(), std::io::Error> {
         [1.6, 1.3, 1.1, 1.0, 2.0, 2.0, 1.0, 1.1, 1.3, 2.0],
         [3.2, 3.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 3.6, 3.2],
     ];
-    let mut physical_layout = PhysicalLayout::new(cost_table).expect("Invalid cost table");
+    let finger_table: [[F; NUM_COLS]; NUM_ROWS] = [
+        [F::R, F::R, F::M, F::M, F::I, F::I, F::M, F::M, F::R, F::R],
+        [F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P],
+        [F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P],
+    ];
+    let mut physical_layout = PhysicalLayout::new(cost_table, finger_table.clone()).expect("Invalid cost table");
     physical_layout.calculate_tri_gram_cost();
     let mut normal_physical_layout =
-        PhysicalLayout::new(normal_cost_table).expect("Invalid cost table");
+        PhysicalLayout::new(normal_cost_table, finger_table).expect("Invalid cost table");
     normal_physical_layout.calculate_tri_gram_cost();
 
     let usable_chars = vec![
@@ -52,9 +58,9 @@ fn main() -> Result<(), std::io::Error> {
         's', 'n', 'z', 'x', 'c', 'v', 'f', 'b', 'h', 'j', 'l', '/',
     ];
     let custom_layout = vec![
-        'h', 'k', 'd', 'y', 'z', 'c', ';', 'e', 'p', 'v', // upper row
-        'r', 's', 't', 'n', 'm', 'g', 'a', 'o', 'i', 'u', // middle row
-        'x', 'f', 'j', 'l', 'b', 'w', 'q', '*', '/', '+', // lower row
+        'b', 'm', 'd', 'z', 'x', '+', ';', 'e', 'p', 'v', // upper row
+        's', 'k', 't', 'n', 'l', 'f', 'a', 'o', 'i', 'u', // middle row
+        'w', 'h', 'g', 'r', 'y', 'q', 'j', '*', '/', 'c', // lower row
     ];
 
     let custom_layout_set: HashSet<char> = custom_layout.iter().cloned().collect();

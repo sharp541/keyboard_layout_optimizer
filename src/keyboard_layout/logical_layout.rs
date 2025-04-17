@@ -87,6 +87,7 @@ impl<'a> LogicalLayout {
 mod tests {
     use super::*;
     use crate::keyboard_layout::*;
+    use crate::keyboard_layout::hand_model::Finger as F;
 
     #[test]
     fn test_from_usable_chars() {
@@ -95,7 +96,12 @@ mod tests {
             [1.6, 1.3, 1.1, 1.0, 2.9, 2.9, 1.0, 1.1, 1.3, 1.6], // 中段（ホームポジション）
             [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 2.6, 3.2], // 下段
         ];
-        let physical_layout = PhysicalLayout::new(cost_matrix).unwrap();
+        let finger_table: [[F; NUM_COLS]; NUM_ROWS] = [
+            [F::R, F::R, F::M, F::M, F::I, F::I, F::M, F::M, F::R, F::R],
+            [F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P],
+            [F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P],
+        ];
+        let physical_layout = PhysicalLayout::new(cost_matrix, finger_table).unwrap();
         let logical_layout =
             LogicalLayout::from_usable_chars(&physical_layout, vec!['a', 'b', 'c']);
         assert_eq!(logical_layout.len(), 30);

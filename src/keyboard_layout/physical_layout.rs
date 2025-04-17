@@ -6,16 +6,19 @@ use std::collections::HashMap;
 
 use super::hand_model::Hand;
 use crate::n_gram::PhysicalNGram;
+use crate::keyboard_layout::Finger;
+
 
 #[derive(Debug)]
 pub struct PhysicalLayout {
     cost_matrix: [[f32; NUM_COLS]; NUM_ROWS],
+    finger_matrix: [[Finger; NUM_COLS]; NUM_ROWS],
     mapping: [(usize, usize); NUM_COLS * NUM_ROWS],
     tri_gram_cost: HashMap<PhysicalNGram<3>, f32>,
 }
 
 impl PhysicalLayout {
-    pub fn new(cost_matrix: [[f32; NUM_COLS]; NUM_ROWS]) -> Result<Self, &'static str> {
+    pub fn new(cost_matrix: [[f32; NUM_COLS]; NUM_ROWS], finger_matrix: [[Finger; NUM_COLS]; NUM_ROWS]) -> Result<Self, &'static str> {
         let mut mapping = [(0, 0); NUM_COLS * NUM_ROWS];
         for i in 0..NUM_ROWS {
             for j in 0..NUM_COLS {
@@ -26,6 +29,7 @@ impl PhysicalLayout {
 
         Ok(PhysicalLayout {
             cost_matrix,
+            finger_matrix,
             mapping,
             tri_gram_cost,
         })
@@ -63,10 +67,12 @@ impl PhysicalLayout {
             Some(coord) => coord,
             None => return 5.0,
         };
-        let same_column: i32 = if col1 == col2 { 16 } else { 0 };
+        let overlap = Self::has_overlap(&vec![self.finger_matrix[row1][col1], self.finger_matrix[row2][col2]]);
+        let same_finger: i32 = if overlap { 8 } else { 0 };
+        let same_column: i32 = if col1 == col2 { 8 } else { 0 };
         let col_diff = max(0, (col1 as i32 - col2 as i32).abs() - 2);
         let row_diff = max(0, (row1 as i32 - row2 as i32).abs() - 1);
-        (row_diff + same_column + col_diff).abs() as f32
+        (row_diff + same_column + col_diff + same_finger).abs() as f32
     }
 
     fn roll_cost(&self, key1: usize, key2: usize, key3: usize) -> f32 {
@@ -83,12 +89,18 @@ impl PhysicalLayout {
             None => return 5.0,
         };
 
-        let same_column: i32 = if col1 == col2 && col2 == col3 { 16 } else { 0 };
+        let overlap = Self::has_overlap(&vec![
+            self.finger_matrix[row1][col1],
+            self.finger_matrix[row2][col2],
+            self.finger_matrix[row3][col3],
+        ]);
+        let same_finger: i32 = if overlap { 8 } else { 0 };
+        let same_column: i32 = if col1 == col2 && col2 == col3 { 8 } else { 0 };
         let not_roll_penalty = if (col1 <= col2 && col2 <= col3) && (col1 >= col2 && col2 >= col3) { 0 } else { 8 };
         let row_diff = max(0, (row1 as i32 - row2 as i32).abs() - 1) +
             max(0, (row2 as i32 - row3 as i32).abs() - 1);
 
-        (same_column + not_roll_penalty + row_diff) as f32
+        (same_column + not_roll_penalty + row_diff + same_finger) as f32
     }
 
     fn stroke_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
@@ -143,6 +155,15 @@ impl PhysicalLayout {
             Some(coord) => Some(*coord),
             None => None,
         }
+    }
+
+    fn has_overlap(fingers: &[Finger]) -> bool {
+        (0..fingers.len() - 1)
+            .any(|i| {
+                let finger1 = fingers[i];
+                let finger2 = fingers[i + 1];
+                !(finger1 & finger2).is_empty()
+            })
     }
 
     fn hand(&self, index: usize) -> Hand {
@@ -239,6 +260,7 @@ pub fn get_right_keys() -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keyboard_layout::hand_model::Finger as F;
 
     #[test]
     fn test_physical_layout() {
@@ -247,7 +269,12 @@ mod tests {
             [1.6, 1.3, 1.1, 1.0, 2.9, 2.9, 1.0, 1.1, 1.3, 1.6], // 中段（ホームポジション）
             [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 2.6, 3.2], // 下段
         ];
-        let physical_layout = PhysicalLayout::new(cost_matrix).unwrap();
+        let finger_table: [[F; NUM_COLS]; NUM_ROWS] = [
+            [F::R, F::R, F::M, F::M, F::I, F::I, F::M, F::M, F::R, F::R],
+            [F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P],
+            [F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P],
+        ];
+        let physical_layout = PhysicalLayout::new(cost_matrix, finger_table).unwrap();
         assert_eq!(physical_layout.position_cost(0), 3.0);
         assert_eq!(physical_layout.position_cost(48), 100.0);
     }

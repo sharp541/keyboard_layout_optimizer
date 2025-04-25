@@ -46,7 +46,7 @@ def sample_dataset(dataset, selector , max_size=1 * 1024 * 1024):
             break
         sampled_files.append(content)
         total_size += size
-    return "".join(sampled_files)
+    return sampled_files
 # %%
 en = "../data/en.txt"
 with open(en, "w", encoding="utf-8") as f:
@@ -63,21 +63,24 @@ ja = "../data/ja.txt"
 with open(ja_raw, "w", encoding="utf-8") as f:
     selector = lambda x: x["text"] if "text" in x else None
     sampled_files = sample_dataset(ja_dataset, selector, max_size=2 * 1024 * 1024)
-    text = "\n".join(sampled_files)
-    # cleaned = clean(text)
-    f.write(f"{text}\n")
+    text = "".join(sampled_files)
+    f.write(f"{text}")
 
 # %%
 with open(ja_raw, "r", encoding="utf-8") as f:
     text = f.read().strip()
-
+# %%
 kks = pykakasi.kakasi()
+lines = text.split("。")
+ret = ""
+for line in lines:
+    if not line.strip():
+        continue
+    result = kks.convert(line)
+    ret += "".join([item["kunrei"] for item in result])
+    ret += " "
+# %%
 with open(ja, "w", encoding="utf-8") as f:
-    for line in text.split("\n"):
-        if not line.strip():
-            continue
-        result = kks.convert(line)
-        f.write("".join([item["hepburn"] for item in result]))
-        f.write("\n")
+    f.write(f"{clean(ret)}")
 
 # %%

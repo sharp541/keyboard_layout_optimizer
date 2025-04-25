@@ -58,9 +58,9 @@ fn main() -> Result<(), std::io::Error> {
         's', 'n', 'z', 'x', 'c', 'v', 'f', 'b', 'h', 'j', 'l', '/',
     ];
     let custom_layout = vec![
-        'b', 'm', 'd', 'z', 'x', '+', ';', 'e', 'p', 'v', // upper row
-        's', 'k', 't', 'n', 'l', 'f', 'a', 'o', 'i', 'u', // middle row
-        'w', 'h', 'g', 'r', 'y', 'q', 'j', '*', '/', 'c', // lower row
+        'h', 'k', 'r', 'z', 'q', '+', ';', 'e', 'p', 'v', // upper row
+        'm', 's', 'n', 't', 'g', 'c', 'a', 'o', 'i', 'u', // middle row
+        'y', 'b', 'l', 'd', 'j', 'x', 'f', '*', '/', 'w', // lower row
     ];
 
     let custom_layout_set: HashSet<char> = custom_layout.iter().cloned().collect();

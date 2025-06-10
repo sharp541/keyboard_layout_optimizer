@@ -38,9 +38,9 @@ impl Genetic {
             LogicalLayout::from_usable_chars(physical_layout, usable_chars.to_vec());
         let mut layout = initial_layout.clone().output();
         let mut best_layout = Individual::new(initial_layout);
-        let usable_chars: HashSet<char> = usable_chars.iter().cloned().collect();
+        let usable_chars_set: HashSet<char> = usable_chars.iter().cloned().collect();
         let tri_grams = ngram_db
-            .get_tri_grams(&usable_chars)
+            .get_tri_grams(&usable_chars_set)
             .expect("Failed to get tri grams");
         best_layout.evaluate(physical_layout, &tri_grams);
 
@@ -87,7 +87,7 @@ impl Genetic {
                         }
                         let parent1 = &population[parent1_index];
                         let parent2 = &population[parent2_index];
-                        let mut child = parent1.cyclic_crossover(parent2, &usable_chars, &mut rng);
+                        let mut child = parent1.cyclic_crossover(parent2, usable_chars, &mut rng);
                         child.mutate(&mut rng_fast);
                         child
                     })
@@ -171,14 +171,25 @@ impl Individual {
     fn cyclic_crossover(
         &self,
         other: &Self,
-        usable_chars: &HashSet<char>,
+        usable_chars: &[char],
         rng: &mut ThreadRng,
     ) -> Self {
         let mut new_layout = self.layout.clone();
 
-        let mut usable_chars = usable_chars.clone();
-        while !usable_chars.is_empty() {
-            let start_char = rand_pop(&mut usable_chars, rng);
+        let n = self.layout.len();
+        let mut visited = vec![false; n];
+        let mut remaining = n;
+
+        while remaining > 0 {
+            let idx = loop {
+                let i = rng.gen_range(0..n);
+                if !visited[i] {
+                    break i;
+                }
+            };
+            visited[idx] = true;
+            remaining -= 1;
+            let start_char = self.layout.get(idx);
             let mut self_char = start_char;
             loop {
                 let self_char_index = self.layout.get_char_index(self_char);
@@ -186,14 +197,22 @@ impl Individual {
                 if start_char == other_char {
                     break;
                 }
-                usable_chars.remove(&other_char);
+                visited[idx] = true;
+                remaining -= 1;
                 self_char = other_char;
             }
-            if usable_chars.is_empty() {
+            if remaining == 0 {
                 break;
             }
 
-            let start_char = rand_pop(&mut usable_chars, rng);
+            let idx = loop {
+                let i = rng.gen_range(0..n);
+                if !visited[i] {
+                    break i;
+                }
+            };
+            visited[idx] = true;
+            remaining -= 1;
             let mut other_char = start_char;
             loop {
                 let other_char_index = other.layout.get_char_index(other_char);
@@ -202,7 +221,8 @@ impl Individual {
                 if start_char == self_char {
                     break;
                 }
-                usable_chars.remove(&self_char);
+                visited[idx] = true;
+                remaining -= 1;
                 other_char = self_char;
             }
         }

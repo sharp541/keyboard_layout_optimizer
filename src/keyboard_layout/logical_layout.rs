@@ -9,9 +9,9 @@ pub struct LogicalLayout {
     usable_chars: HashMap<char, usize>,
 }
 
-impl<'a> LogicalLayout {
+impl LogicalLayout {
     pub fn from_usable_chars(physical_layout: &PhysicalLayout, usable_chars: Vec<char>) -> Self {
-        let mut layout: Vec<char> = usable_chars.iter().map(|c| *c).collect();
+        let mut layout: Vec<char> = usable_chars.to_vec();
         let mut usable_chars: HashMap<char, usize> = usable_chars
             .into_iter()
             .enumerate()

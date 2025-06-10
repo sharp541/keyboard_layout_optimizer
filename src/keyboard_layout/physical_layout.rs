@@ -25,6 +25,7 @@ impl PhysicalLayout {
                 mapping[i * NUM_COLS + j] = (i, j);
             }
         }
+
         let tri_gram_cost = HashMap::new();
 
         Ok(PhysicalLayout {
@@ -52,10 +53,10 @@ impl PhysicalLayout {
     fn position_cost(&self, idx: usize) -> f32 {
         match self.mapping.get(idx) {
             Some((row, col)) => {
-                return self.cost_matrix[*row][*col];
+                self.cost_matrix[*row][*col]
             }
-            None => return 5.0, // 未知の文字
-        };
+            None => 5.0, // 未知の文字
+        }
     }
 
     fn relative_cost(&self, key1: usize, key2: usize) -> f32 {
@@ -67,7 +68,7 @@ impl PhysicalLayout {
             Some(coord) => coord,
             None => return 5.0,
         };
-        let overlap = Self::has_overlap(&vec![self.finger_matrix[row1][col1], self.finger_matrix[row2][col2]]);
+        let overlap = Self::has_overlap(&[self.finger_matrix[row1][col1], self.finger_matrix[row2][col2]]);
         let same_finger: i32 = if overlap { 8 } else { 0 };
         let same_column: i32 = if col1 == col2 { 8 } else { 0 };
         let col_diff = max(0, (col1 as i32 - col2 as i32).abs() - 2);
@@ -89,10 +90,10 @@ impl PhysicalLayout {
             None => return 5.0,
         };
 
-        let overlap = Self::has_overlap(&vec![
+        let overlap = Self::has_overlap(&[
             self.finger_matrix[row1][col1],
             self.finger_matrix[row2][col2],
-            self.finger_matrix[row3][col3],
+            self.finger_matrix[row3][col3]
         ]);
         let same_finger: i32 = if overlap { 8 } else { 0 };
         let same_column: i32 = if col1 == col2 && col2 == col3 { 8 } else { 0 };
@@ -151,10 +152,7 @@ impl PhysicalLayout {
     }
 
     fn coord(&self, index: usize) -> Option<(usize, usize)> {
-        match self.mapping.get(index) {
-            Some(coord) => Some(*coord),
-            None => None,
-        }
+        self.mapping.get(index).copied()
     }
 
     fn has_overlap(fingers: &[Finger]) -> bool {
@@ -179,7 +177,7 @@ impl PhysicalLayout {
         }
     }
 
-    pub fn print(&self, layout: &Vec<char>) {
+    pub fn print(&self, layout: &[char]) {
         println!();
         for (i, row) in layout.chunks(self.cost_matrix[0].len()).enumerate() {
             for (j, key) in row.iter().enumerate() {

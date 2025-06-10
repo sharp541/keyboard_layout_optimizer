@@ -155,7 +155,7 @@ struct Individual {
     score: f32,
 }
 
-impl<'a> Individual {
+impl Individual {
     fn new(layout: LogicalLayout) -> Self {
         Self { layout, score: 0.0 }
     }
@@ -229,7 +229,7 @@ impl<'a> Individual {
     }
 }
 
-impl<'a> PartialEq for Individual {
+impl PartialEq for Individual {
     fn eq(&self, other: &Self) -> bool {
         self.score == other.score
     }

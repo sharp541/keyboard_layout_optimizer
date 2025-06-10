@@ -106,7 +106,7 @@ impl NGramDB {
             .prepare("SELECT n_gram, count FROM n_grams WHERE n = ?1")
             .expect("Failed to prepare statement");
         let n_grams_iter = stmt
-            .query_map(params![1 as i32], |row| {
+            .query_map(params![1_i32], |row| {
                 let n_gram: String = row.get(0).expect("Failed to get n-gram");
                 let count: u32 = row.get(1).expect("Failed to get count");
                 Ok((
@@ -137,7 +137,7 @@ impl NGramDB {
             .prepare("SELECT n_gram, count FROM n_grams WHERE n = ?1")
             .expect("Failed to prepare statement");
         let n_grams_iter = stmt
-            .query_map(params![3 as i32], |row| {
+            .query_map(params![3_i32], |row| {
                 let n_gram: String = row.get(0).expect("Failed to get n-gram");
                 let count: u32 = row.get(1).expect("Failed to get frequency");
                 Ok((

@@ -1,37 +1,31 @@
 pub const NUM_ROWS: usize = 3;
 pub const NUM_COLS: usize = 10;
+pub const NUM_LAYERS: usize = 2;
 
 use std::cmp::max;
 use std::collections::HashMap;
 
 use super::hand_model::Hand;
-use crate::n_gram::PhysicalNGram;
 use crate::keyboard_layout::Finger;
-
+use crate::n_gram::PhysicalNGram;
 
 #[derive(Debug)]
 pub struct PhysicalLayout {
-    cost_matrix: [[f32; NUM_COLS]; NUM_ROWS],
-    finger_matrix: [[Finger; NUM_COLS]; NUM_ROWS],
-    mapping: [(usize, usize); NUM_COLS * NUM_ROWS],
+    cost_matrix: [f32; NUM_COLS * NUM_ROWS],
+    finger_matrix: [Finger; NUM_COLS * NUM_ROWS],
     tri_gram_cost: HashMap<PhysicalNGram<3>, f32>,
 }
 
 impl PhysicalLayout {
-    pub fn new(cost_matrix: [[f32; NUM_COLS]; NUM_ROWS], finger_matrix: [[Finger; NUM_COLS]; NUM_ROWS]) -> Result<Self, &'static str> {
-        let mut mapping = [(0, 0); NUM_COLS * NUM_ROWS];
-        for i in 0..NUM_ROWS {
-            for j in 0..NUM_COLS {
-                mapping[i * NUM_COLS + j] = (i, j);
-            }
-        }
-
+    pub fn new(
+        cost_matrix: [f32; NUM_COLS * NUM_ROWS],
+        finger_matrix: [Finger; NUM_COLS * NUM_ROWS],
+    ) -> Result<Self, &'static str> {
         let tri_gram_cost = HashMap::new();
 
         Ok(PhysicalLayout {
             cost_matrix,
             finger_matrix,
-            mapping,
             tri_gram_cost,
         })
     }
@@ -50,58 +44,35 @@ impl PhysicalLayout {
         }
     }
 
-    fn position_cost(&self, idx: usize) -> f32 {
-        match self.mapping.get(idx) {
-            Some((row, col)) => {
-                self.cost_matrix[*row][*col]
+    fn position_cost(&self, key: usize) -> f32 {
+        self.cost_matrix[key]
+    }
+
+    fn finger_cost(&self, key1: usize, key2: usize) -> f32 {
+        let finger_cost = if self.finger_matrix[key1] == self.finger_matrix[key2] {
+            8
+        } else {
+            0
+        };
+        let same_column = if key1 % NUM_COLS == key2 % NUM_COLS {
+            8
+        } else {
+            0
+        };
+        let col_diff = max(0, ((key1 % NUM_COLS - key2 % NUM_COLS) as i32).abs() - 2);
+        let row_diff = max(0, ((key1 / NUM_COLS - key2 / NUM_COLS) as i32).abs() - 1);
+        (row_diff + same_column + col_diff + finger_cost) as f32
+    }
+
+    fn roll_cost(&self, keys: &[usize]) -> f32 {
+        for i in 0..keys.len() - 1 {
+            let finger1 = &self.finger_matrix[keys[i]];
+            let finger2 = &self.finger_matrix[keys[i + 1]];
+            if finger1 <= finger2 {
+                return 8.0;
             }
-            None => 5.0, // 未知の文字
         }
-    }
-
-    fn relative_cost(&self, key1: usize, key2: usize) -> f32 {
-        let (row1, col1) = match self.coord(key1) {
-            Some(coord) => coord,
-            None => return 5.0,
-        };
-        let (row2, col2) = match self.coord(key2) {
-            Some(coord) => coord,
-            None => return 5.0,
-        };
-        let overlap = Self::has_overlap(&[self.finger_matrix[row1][col1], self.finger_matrix[row2][col2]]);
-        let same_finger: i32 = if overlap { 8 } else { 0 };
-        let same_column: i32 = if col1 == col2 { 8 } else { 0 };
-        let col_diff = max(0, (col1 as i32 - col2 as i32).abs() - 2);
-        let row_diff = max(0, (row1 as i32 - row2 as i32).abs() - 1);
-        (row_diff + same_column + col_diff + same_finger).abs() as f32
-    }
-
-    fn roll_cost(&self, key1: usize, key2: usize, key3: usize) -> f32 {
-        let (row1, col1) = match self.coord(key1) {
-            Some(coord) => coord,
-            None => return 5.0,
-        };
-        let (row2, col2) = match self.coord(key2) {
-            Some(coord) => coord,
-            None => return 5.0,
-        };
-        let (row3, col3) = match self.coord(key3) {
-            Some(coord) => coord,
-            None => return 5.0,
-        };
-
-        let overlap = Self::has_overlap(&[
-            self.finger_matrix[row1][col1],
-            self.finger_matrix[row2][col2],
-            self.finger_matrix[row3][col3]
-        ]);
-        let same_finger: i32 = if overlap { 8 } else { 0 };
-        let same_column: i32 = if col1 == col2 && col2 == col3 { 8 } else { 0 };
-        let not_roll_penalty = if (col1 <= col2 && col2 <= col3) && (col1 >= col2 && col2 >= col3) { 0 } else { 8 };
-        let row_diff = max(0, (row1 as i32 - row2 as i32).abs() - 1) +
-            max(0, (row2 as i32 - row3 as i32).abs() - 1);
-
-        (same_column + not_roll_penalty + row_diff + same_finger) as f32
+        0.0
     }
 
     fn stroke_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
@@ -117,23 +88,29 @@ impl PhysicalLayout {
         let cost = match pattern {
             (true, true, true) => {
                 let position_cost = self.position_cost(key1);
-                let roll_cost = self.roll_cost(key1, key2, key3);
-                position_cost * roll_cost
+                let roll_cost = self.roll_cost(&[key1, key2, key3]);
+                let finger_cost = self.finger_cost(key1, key2)
+                    + self.finger_cost(key2, key3)
+                    + self.finger_cost(key3, key1);
+                position_cost * (roll_cost + finger_cost)
             }
             (true, true, false) => {
                 let position_cost = self.position_cost(key1);
-                let relative_cost = self.relative_cost(key1, key2);
-                position_cost * relative_cost + self.position_cost(key3)
+                let finger_cost = self.finger_cost(key1, key2);
+                let roll_cost = self.roll_cost(&[key1, key2]);
+                position_cost * (finger_cost + roll_cost) + self.position_cost(key3)
             }
             (true, false, true) => {
                 let position_cost = self.position_cost(key1);
-                let relative_cost = self.relative_cost(key1, key3);
-                position_cost * relative_cost + self.position_cost(key2)
+                let finger_cost = self.finger_cost(key1, key3);
+                let roll_cost = self.roll_cost(&[key1, key3]);
+                position_cost * (finger_cost + roll_cost) + self.position_cost(key2)
             }
             (true, false, false) => {
                 let position_cost = self.position_cost(key2);
-                let relative_cost = self.relative_cost(key2, key3);
-                position_cost * relative_cost + self.position_cost(key1)
+                let finger_cost = self.finger_cost(key2, key3);
+                let roll_cost = self.roll_cost(&[key2, key3]);
+                position_cost * (finger_cost + roll_cost) + self.position_cost(key1)
             }
             _ => panic!("Invalid pattern"),
         };
@@ -141,7 +118,7 @@ impl PhysicalLayout {
     }
 
     pub fn len(&self) -> usize {
-        self.mapping.len()
+        NUM_COLS * NUM_ROWS
     }
 
     pub fn get_tri_gram_cost(&self, n_gram: &PhysicalNGram<3>) -> f32 {
@@ -151,88 +128,33 @@ impl PhysicalLayout {
             .expect("Failed to get tri gram cost")
     }
 
-    fn coord(&self, index: usize) -> Option<(usize, usize)> {
-        self.mapping.get(index).copied()
-    }
-
-    fn has_overlap(fingers: &[Finger]) -> bool {
-        (0..fingers.len() - 1)
-            .any(|i| {
-                let finger1 = fingers[i];
-                let finger2 = fingers[i + 1];
-                !(finger1 & finger2).is_empty()
-            })
-    }
-
     fn hand(&self, index: usize) -> Hand {
-        match self.coord(index) {
-            Some((_, col)) => {
-                if col < NUM_COLS / 2 {
-                    Hand::Left
-                } else {
-                    Hand::Right
-                }
-            }
-            None => Hand::Other,
+        let col = index % NUM_COLS;
+        if col < NUM_COLS / 2 {
+            Hand::Left
+        } else {
+            Hand::Right
         }
     }
 
     pub fn print(&self, layout: &[char]) {
         println!();
-        for (i, row) in layout.chunks(self.cost_matrix[0].len()).enumerate() {
+        for (i, row) in layout.chunks(NUM_COLS).enumerate() {
             for (j, key) in row.iter().enumerate() {
                 if j == NUM_COLS / 2 {
                     print!("| ");
                 }
                 print!("{} ", key);
-                if (i + 1) * (j + 1) == self.cost_matrix[0].len() * self.cost_matrix.len() {
+                if (i + 1) * (j + 1) == NUM_COLS * NUM_ROWS {
                     println!();
-                    std::iter::repeat("--")
-                        .take(self.cost_matrix[0].len() + 1)
-                        .for_each(|c| {
-                            print!("{}", c);
-                        });
+                    std::iter::repeat_n("--", NUM_COLS + 1).for_each(|c| {
+                        print!("{}", c);
+                    });
                 }
             }
             println!();
         }
     }
-}
-
-fn get_left_grams() -> Vec<PhysicalNGram<3>> {
-    let mut keys = Vec::new();
-    for i in 0..NUM_ROWS {
-        for j in 0..NUM_COLS / 2 {
-            keys.push(i * NUM_COLS + j);
-        }
-    }
-    let mut grams = Vec::new();
-    for k1 in keys.iter() {
-        for k2 in keys.iter() {
-            for k3 in keys.iter() {
-                grams.push(PhysicalNGram::new([*k1, *k2, *k3]));
-            }
-        }
-    }
-    grams
-}
-
-fn get_right_grams() -> Vec<PhysicalNGram<3>> {
-    let mut keys = Vec::new();
-    for i in 0..NUM_ROWS {
-        for j in NUM_COLS / 2..NUM_COLS {
-            keys.push(i * NUM_COLS + j);
-        }
-    }
-    let mut grams = Vec::new();
-    for k1 in keys.iter() {
-        for k2 in keys.iter() {
-            for k3 in keys.iter() {
-                grams.push(PhysicalNGram::new([*k1, *k2, *k3]));
-            }
-        }
-    }
-    grams
 }
 
 pub fn get_left_keys() -> Vec<usize> {
@@ -262,15 +184,43 @@ mod tests {
 
     #[test]
     fn test_physical_layout() {
-        let cost_matrix: [[f32; NUM_COLS]; NUM_ROWS] = [
-            [3.0, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.0], // 上段
-            [1.6, 1.3, 1.1, 1.0, 2.9, 2.9, 1.0, 1.1, 1.3, 1.6], // 中段（ホームポジション）
-            [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 2.6, 3.2], // 下段
+        let cost_matrix = [
+            3.0, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.0, // 上段
+            1.6, 1.3, 1.1, 1.0, 2.9, 2.9, 1.0, 1.1, 1.3,
+            1.6, // 中段（ホームポジション）
+            3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 2.6, 3.2, // 下段
         ];
-        let finger_table: [[F; NUM_COLS]; NUM_ROWS] = [
-            [F::R, F::R, F::M, F::M, F::I, F::I, F::M, F::M, F::R, F::R],
-            [F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P],
-            [F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P],
+        let finger_table = [
+            F::R,
+            F::R,
+            F::M,
+            F::M,
+            F::I,
+            F::I,
+            F::M,
+            F::M,
+            F::R,
+            F::R,
+            F::P,
+            F::R,
+            F::M,
+            F::I,
+            F::I,
+            F::I,
+            F::I,
+            F::M,
+            F::R,
+            F::P,
+            F::P,
+            F::R,
+            F::M,
+            F::I,
+            F::I,
+            F::I,
+            F::I,
+            F::M,
+            F::R,
+            F::P,
         ];
         let physical_layout = PhysicalLayout::new(cost_matrix, finger_table).unwrap();
         assert_eq!(physical_layout.position_cost(0), 3.0);

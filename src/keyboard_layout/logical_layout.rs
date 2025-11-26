@@ -1,35 +1,63 @@
 use rayon::prelude::*;
 use std::collections::HashMap;
 
-use super::physical_layout::PhysicalLayout;
+use super::physical_layout::{PhysicalLayout, NUM_COLS, NUM_LAYERS, NUM_ROWS};
 use crate::n_gram::{LogicalNGram, PhysicalNGram};
+
+#[derive(Debug, Clone, Copy)]
+pub struct Key {
+    layers: [Option<char>; NUM_LAYERS],
+}
+impl Key {
+    pub fn new() -> Self {
+        Key {
+            layers: [None; NUM_LAYERS],
+        }
+    }
+
+    pub fn set(&mut self, layer: usize, c: char) {
+        self.layers[layer] = Some(c);
+    }
+
+    pub fn get(&self, layer: usize) -> Option<char> {
+        self.layers[layer]
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct KeyIndex {
+    idx: usize,
+    layer: usize,
+}
+
+impl KeyIndex {
+    pub fn new(n: usize) -> Self {
+        let idx = n % (NUM_COLS * NUM_ROWS);
+        let layer = n / (NUM_COLS * NUM_ROWS);
+        KeyIndex { idx, layer }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LogicalLayout {
-    layout: Vec<char>,
-    usable_chars: HashMap<char, usize>,
+    layout: [Key; NUM_COLS * NUM_ROWS],
+    char_map: HashMap<char, KeyIndex>,
 }
 
 impl LogicalLayout {
-    pub fn from_usable_chars(physical_layout: &PhysicalLayout, usable_chars: Vec<char>) -> Self {
-        let mut layout: Vec<char> = usable_chars.to_vec();
-        let mut usable_chars: HashMap<char, usize> = usable_chars
-            .into_iter()
-            .enumerate()
-            .map(|(i, c)| (c, i))
-            .collect();
-        let mut next_char = ' ';
+    pub fn from_usable_chars(usable_chars: Vec<char>) -> Self {
+        if usable_chars.len() > NUM_COLS * NUM_ROWS * NUM_LAYERS {
+            panic!("Too many usable characters: {}", usable_chars.len());
+        }
 
-        while layout.len() < physical_layout.len() {
-            while usable_chars.contains_key(&next_char) {
-                next_char = ((next_char as u8) + 1) as char;
-            }
-            layout.push(next_char);
-            usable_chars.insert(next_char, layout.len() - 1);
+        let mut layout: [Key; NUM_COLS * NUM_ROWS] = [Key::new(); NUM_COLS * NUM_ROWS];
+        let mut char_map = HashMap::new();
+        for (i, c) in usable_chars.into_iter().enumerate() {
+            let key_index = KeyIndex::new(i);
+            layout[key_index.idx].set(key_index.layer, c);
+            char_map.insert(c, key_index);
         }
-        LogicalLayout {
-            layout,
-            usable_chars,
-        }
+        LogicalLayout { layout, char_map }
     }
 
     pub fn evaluate(
@@ -41,9 +69,9 @@ impl LogicalLayout {
             .par_iter()
             .map(|(n_gram, score)| -> f32 {
                 let physical_n_gram = PhysicalNGram::new([
-                    self.get_char_index(n_gram.get(0)),
-                    self.get_char_index(n_gram.get(1)),
-                    self.get_char_index(n_gram.get(2)),
+                    self.get_char_index(n_gram.get(0)).idx,
+                    self.get_char_index(n_gram.get(1)).idx,
+                    self.get_char_index(n_gram.get(2)).idx,
                 ]);
                 *score * physical_layout.get_tri_gram_cost(&physical_n_gram)
             })
@@ -52,22 +80,25 @@ impl LogicalLayout {
     }
 
     pub fn swap(&mut self, a: usize, b: usize) {
-        self.usable_chars.insert(self.layout[a], b);
-        self.usable_chars.insert(self.layout[b], a);
-        self.layout.swap(a, b);
+        let a_key_index = KeyIndex::new(a);
+        let b_key_index = KeyIndex::new(b);
+        let a_key_char = self.layout[a_key_index.idx]
+            .get(a_key_index.layer)
+            .expect("Invalid key index");
+        let b_key_char = self.layout[b_key_index.idx]
+            .get(b_key_index.layer)
+            .expect("Invalid key index");
+        self.layout[a_key_index.idx].set(a_key_index.layer, b_key_char);
+        self.layout[b_key_index.idx].set(b_key_index.layer, a_key_char);
+        self.char_map.insert(a_key_char, b_key_index);
+        self.char_map.insert(b_key_char, a_key_index);
     }
 
-    pub fn get_char_index(&self, c: char) -> usize {
-        *self.usable_chars.get(&c).unwrap_or(&self.layout.len())
-    }
-
-    pub fn get(&self, index: usize) -> char {
-        self.layout[index]
-    }
-
-    pub fn set(&mut self, index: usize, c: char) {
-        self.usable_chars.insert(c, index);
-        self.layout[index] = c;
+    pub fn get_char_index(&self, c: char) -> KeyIndex {
+        *self
+            .char_map
+            .get(&c)
+            .expect(&format!("Character {} not found", c))
     }
 
     pub fn len(&self) -> usize {
@@ -75,36 +106,10 @@ impl LogicalLayout {
     }
 
     pub fn char_nums(&self) -> usize {
-        self.usable_chars.len()
+        self.char_map.len()
     }
 
-    pub fn output(self) -> Vec<char> {
+    pub fn output(self) -> [Key; NUM_COLS * NUM_ROWS] {
         self.layout
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::keyboard_layout::*;
-    use crate::keyboard_layout::hand_model::Finger as F;
-
-    #[test]
-    fn test_from_usable_chars() {
-        let cost_matrix: [[f32; NUM_COLS]; NUM_ROWS] = [
-            [3.0, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.0], // 上段
-            [1.6, 1.3, 1.1, 1.0, 2.9, 2.9, 1.0, 1.1, 1.3, 1.6], // 中段（ホームポジション）
-            [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 2.6, 3.2], // 下段
-        ];
-        let finger_table: [[F; NUM_COLS]; NUM_ROWS] = [
-            [F::R, F::R, F::M, F::M, F::I, F::I, F::M, F::M, F::R, F::R],
-            [F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P],
-            [F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P],
-        ];
-        let physical_layout = PhysicalLayout::new(cost_matrix, finger_table).unwrap();
-        let logical_layout =
-            LogicalLayout::from_usable_chars(&physical_layout, vec!['a', 'b', 'c']);
-        assert_eq!(logical_layout.len(), 30);
-        assert_eq!(logical_layout.char_nums(), 3);
     }
 }

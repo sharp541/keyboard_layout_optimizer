@@ -12,7 +12,7 @@ pub struct LogicalLayout {
 }
 
 impl LogicalLayout {
-    pub fn from_usable_chars(usable_chars: &Vec<char>) -> Self {
+    pub fn from_usable_chars(usable_chars: &[char]) -> Self {
         if usable_chars.len() > NUM_COLS * NUM_ROWS * NUM_LAYERS {
             panic!("Too many usable characters: {}", usable_chars.len());
         }
@@ -54,7 +54,7 @@ impl LogicalLayout {
         physical_layout: &PhysicalLayout,
         tri_grams: &HashMap<LogicalNGram<3>, f32>,
     ) -> f32 {
-        let cost = tri_grams
+        tri_grams
             .iter()
             .map(|(n_gram, score)| -> f32 {
                 let k1 = self.get_char_index(n_gram.get(0));
@@ -62,8 +62,23 @@ impl LogicalLayout {
                 let k3 = self.get_char_index(n_gram.get(2));
                 *score * physical_layout.get_tri_gram_cost(k1, k2, k3)
             })
-            .sum();
-        cost
+            .sum()
+    }
+
+    pub fn evaluate_par(
+        &self,
+        physical_layout: &PhysicalLayout,
+        tri_grams_vec: &[(&LogicalNGram<3>, f32)],
+    ) -> f32 {
+        tri_grams_vec
+            .par_iter()
+            .map(|(n_gram, score)| -> f32 {
+                let k1 = self.get_char_index(n_gram.get(0));
+                let k2 = self.get_char_index(n_gram.get(1));
+                let k3 = self.get_char_index(n_gram.get(2));
+                *score * physical_layout.get_tri_gram_cost(k1, k2, k3)
+            })
+            .sum()
     }
 
     pub fn swap(&mut self, a: usize, b: usize) {
@@ -76,7 +91,7 @@ impl LogicalLayout {
         *self
             .char_map
             .get(&c)
-            .expect(&format!("Character {} not found", c))
+            .unwrap_or_else(|| panic!("Character {} not found", c))
     }
 
     pub fn get(&self, index: usize) -> char {
@@ -90,6 +105,10 @@ impl LogicalLayout {
 
     pub fn len(&self) -> usize {
         self.layout.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.layout.is_empty()
     }
 
     pub fn char_nums(&self) -> usize {

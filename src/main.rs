@@ -46,7 +46,7 @@ fn main() -> Result<(), std::io::Error> {
 
     let algorithm = Genetic::new(32, 16);
 
-    algorithm.optimize(&physical_layout, &custom_layout, &n_gram_db, 40000, true, 3000);
+    algorithm.optimize(&physical_layout, &custom_layout, &n_gram_db, 40000, true, 500);
 
     Ok(())
 }

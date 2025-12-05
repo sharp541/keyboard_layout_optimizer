@@ -32,13 +32,18 @@ impl Genetic {
         early_stop_count: usize,
     ) {
         let initial_layout =
-            LogicalLayout::from_usable_chars(&usable_chars.to_vec());
+            LogicalLayout::from_usable_chars(usable_chars);
         let mut best_layout = Individual::new(initial_layout.clone());
         let usable_chars_set: HashSet<char> = usable_chars.iter().cloned().collect();
         let tri_grams = ngram_db
             .get_tri_grams(&usable_chars_set)
             .expect("Failed to get tri grams");
-        best_layout.evaluate(physical_layout, &tri_grams);
+        // Vec化：評価を並列化するために一度だけクローン
+        let tri_grams_vec: Vec<(&LogicalNGram<3>, f32)> = tri_grams
+            .iter()
+            .map(|(ng, s)| (ng, *s))
+            .collect();
+        best_layout.score = best_layout.layout.evaluate_par(physical_layout, &tri_grams_vec);
 
         let mut rng_fast = fastrand::Rng::new();
         // initialize
@@ -103,7 +108,7 @@ impl Genetic {
 
                 // Evaluate population
                 population.par_iter_mut().for_each(|i| {
-                    i.evaluate(physical_layout, &tri_grams);
+                    i.score = i.layout.evaluate_par(physical_layout, &tri_grams_vec);
                 });
 
                 // 完全ソートを避ける（次反復のエリート抽出は部分選択で行う）

@@ -84,8 +84,6 @@ impl LogicalLayout {
     }
 
     pub fn set(&mut self, index: usize, c: char) {
-        let old_char = self.layout[index];
-        self.char_map.remove(&old_char);
         self.layout[index] = c;
         self.char_map.insert(c, index);
     }

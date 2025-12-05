@@ -61,7 +61,7 @@ impl Genetic {
         let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
         let mut count = 0;
         for i in 0..iterations {
-            islands.chunks_mut(1).for_each(|chunk| {
+            islands.par_chunks_mut(1).for_each(|chunk| {
                 let population = &mut chunk[0];
 
                 let sum = population.iter().map(|ind| ind.score).sum::<f32>();
@@ -85,7 +85,6 @@ impl Genetic {
                         let parent1 = &population[parent1_index];
                         let parent2 = &population[parent2_index];
                         let mut child = parent1.cyclic_crossover(parent2, &mut rng);
-                        child.layout.print();
                         child.mutate(&mut rng_fast);
                         child
                     })
@@ -171,60 +170,34 @@ impl Individual {
         other: &Self,
         rng: &mut ThreadRng,
     ) -> Self {
-        let mut new_layout = self.layout.clone();
-
+        // Cyclic crossover for permutations:
+        // Start from a random index, follow the cycle of positions defined
+        // by mapping parent1's value into the index where that value appears in parent2.
+        // Positions in the cycle take values from parent1; others remain from parent2.
         let n = self.layout.len();
-        let mut visited = vec![false; n];
-        let mut remaining = n;
+        let mut child_layout = other.layout.clone();
 
-        while remaining > 0 {
-            let idx = loop {
-                let i = rng.gen_range(0..n);
-                if !visited[i] {
-                    break i;
-                }
-            };
-            visited[idx] = true;
-            remaining -= 1;
-            let start_char = self.layout.get(idx);
-            let mut self_char = start_char;
-            loop {
-                let self_char_index = self.layout.get_char_index(self_char);
-                let other_char = other.layout.get(self_char_index);
-                if start_char == other_char {
-                    break;
-                }
-                visited[idx] = true;
-                remaining -= 1;
-                self_char = other_char;
-            }
-            if remaining == 0 {
+        let start = rng.gen_range(0..n);
+        let mut idx = start;
+        let mut visited = vec![false; n];
+
+        loop {
+            if visited[idx] {
                 break;
             }
-
-            let idx = loop {
-                let i = rng.gen_range(0..n);
-                if !visited[i] {
-                    break i;
-                }
-            };
             visited[idx] = true;
-            remaining -= 1;
-            let mut other_char = start_char;
-            loop {
-                let other_char_index = other.layout.get_char_index(other_char);
-                let self_char = self.layout.get(other_char_index);
-                new_layout.set(other_char_index, other_char);
-                if start_char == self_char {
-                    break;
-                }
-                visited[idx] = true;
-                remaining -= 1;
-                other_char = self_char;
+
+            let v = self.layout.get(idx);
+            child_layout.set(idx, v);
+
+            let next_idx = other.layout.get_char_index(v);
+            if visited[next_idx] {
+                break;
             }
+            idx = next_idx;
         }
 
-        Self::new(new_layout)
+        Self::new(child_layout)
     }
 
     fn random_mutation(&mut self, rng: &mut fastrand::Rng) {

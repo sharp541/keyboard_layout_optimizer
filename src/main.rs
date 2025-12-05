@@ -44,9 +44,9 @@ fn main() -> Result<(), std::io::Error> {
     println!("custom score: {}", score);
     custom.print();
 
-    let algorithm = Genetic::new(4, 2);
+    let algorithm = Genetic::new(32, 16);
 
-    algorithm.optimize(&physical_layout, &custom_layout, &n_gram_db, 4000, true, 300);
+    algorithm.optimize(&physical_layout, &custom_layout, &n_gram_db, 40000, true, 3000);
 
     Ok(())
 }

@@ -1,7 +1,5 @@
 use fastrand;
-use rand::distributions::WeightedIndex;
 use rand::prelude::*;
-use rand::thread_rng;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -61,58 +59,75 @@ impl Genetic {
         let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
         let mut count = 0;
         for i in 0..iterations {
-            islands.par_chunks_mut(1).for_each(|chunk| {
-                let population = &mut chunk[0];
-
-                let sum = population.iter().map(|ind| ind.score).sum::<f32>();
-                let weights: Vec<f32> = population.iter().map(|ind| ind.score / sum).collect();
-                let dist = WeightedIndex::new(weights).unwrap();
-
-                // Keep elite individuals
+            // 並列化：島ごとに独立処理
+            islands.par_iter_mut().for_each(|population| {
+                // スレッドローカルの軽量RNG
+                let mut local_rng = fastrand::Rng::new();
+                // エリート抽出：全体ソートを避け、最小スコアの上位elite_numのみ選ぶ
                 let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
-                new_population.extend(population.iter().take(elite_num).cloned());
+                for _ in 0..elite_num {
+                    if let Some((best_idx, _)) = population
+                        .iter()
+                        .enumerate()
+                        .min_by(|(_, a), (_, b)| a.score.partial_cmp(&b.score).expect("Failed to compare scores"))
+                    {
+                        new_population.push(population[best_idx].clone());
+                        // 重複選出を避けるため、その個体のscoreを一時的に最大化
+                        population[best_idx].score = f32::INFINITY;
+                    }
+                }
 
                 // Crossover
-                let mut children: Vec<Individual> = (0..self.population_size - elite_num)
-                    .map(|_| {
-                        let mut rng = thread_rng();
-                        let mut rng_fast = fastrand::Rng::new();
-                        let parent1_index = dist.sample(&mut rng);
-                        let parent2_index = dist.sample(&mut rng);
-                        if parent1_index == parent2_index {
-                            return population[parent1_index].clone();
-                        }
-                        let parent1 = &population[parent1_index];
-                        let parent2 = &population[parent2_index];
-                        let mut child = parent1.cyclic_crossover(parent2, &mut rng);
-                        child.mutate(&mut rng_fast);
-                        child
-                    })
-                    .collect();
+                let mut children: Vec<Individual> = Vec::with_capacity(self.population_size - elite_num);
+                // トーナメント選択（最小化）：k=3
+                let k = 3usize;
+                for _ in 0..(self.population_size - elite_num) {
+                    // 親1
+                    let p1 = tournament_index(population, k, &mut local_rng);
+                    // 親2（同一回避を緩く試みる）
+                    let mut p2 = tournament_index(population, k, &mut local_rng);
+                    if p1 == p2 {
+                        p2 = tournament_index(population, k, &mut local_rng);
+                    }
+                    let parent1 = &population[p1];
+                    // randのThreadRngは一つを共有
+                    let mut rng = rand::thread_rng();
+                    let parent2 = &population[p2];
+                    let mut child = parent1.cyclic_crossover(parent2, &mut rng);
+                    child.mutate(&mut local_rng);
+                    children.push(child);
+                }
                 new_population.append(&mut children);
 
                 *population = new_population;
 
                 // Evaluate population
-                population.iter_mut().for_each(|i| {
+                population.par_iter_mut().for_each(|i| {
                     i.evaluate(physical_layout, &tri_grams);
                 });
 
-                // Sort population by score
-                population.sort_by(|a, b| {
-                    a.score
-                        .partial_cmp(&b.score)
-                        .expect("Failed to compare scores")
-                });
+                // 完全ソートを避ける（次反復のエリート抽出は部分選択で行う）
             });
 
             // migrate best individuals
             if i % 10 == 0 {
                 for idx in 0..islands.len() {
-                    let best_individual = islands[idx][0].clone();
+                    // 各島の最良個体（最小スコア）を取得
+                    let best_individual = islands[idx]
+                        .iter()
+                        .min_by(|a, b| a.score.partial_cmp(&b.score).expect("Failed to compare scores"))
+                        .cloned()
+                        .expect("Island population should not be empty");
                     let next_idx = (idx + 1) % islands.len();
                     let next_population = &mut islands[next_idx];
-                    next_population[self.population_size - 1] = best_individual;
+                    // 次島の最悪個体（最大スコア）を置換
+                    if let Some((worst_idx, _)) = next_population
+                        .iter()
+                        .enumerate()
+                        .max_by(|(_, a), (_, b)| a.score.partial_cmp(&b.score).expect("Failed to compare scores"))
+                    {
+                        next_population[worst_idx] = best_individual;
+                    }
                 }
             }
 
@@ -213,6 +228,22 @@ impl Individual {
             _ => self.random_mutation(rng),
         }
     }
+}
+
+// トーナメント選択（最小化）：k個体から最良（最小スコア）を選ぶ
+fn tournament_index(population: &[Individual], k: usize, rng: &mut fastrand::Rng) -> usize {
+    let n = population.len();
+    let mut best_idx = rng.usize(0..n);
+    let mut best_score = population[best_idx].score;
+    for _ in 1..k {
+        let idx = rng.usize(0..n);
+        let s = population[idx].score;
+        if s < best_score {
+            best_score = s;
+            best_idx = idx;
+        }
+    }
+    best_idx
 }
 
 impl PartialEq for Individual {

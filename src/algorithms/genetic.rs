@@ -38,12 +38,23 @@ impl Genetic {
         let tri_grams = ngram_db
             .get_tri_grams(&usable_chars_set)
             .expect("Failed to get tri grams");
-        // Vec化：評価を並列化するために一度だけクローン
-        let tri_grams_vec: Vec<(&LogicalNGram<3>, f32)> = tri_grams
+        // 使用文字に連番IDを付与（初期レイアウトと同一順）
+        let char_to_id: HashMap<char, usize> = usable_chars
             .iter()
-            .map(|(ng, s)| (ng, *s))
+            .enumerate()
+            .map(|(i, &c)| (c, i))
             .collect();
-        best_layout.score = best_layout.layout.evaluate_par(physical_layout, &tri_grams_vec);
+        // tri_gramsをID化してVecに前処理
+        let tri_grams_ids: Vec<([usize; 3], f32)> = tri_grams
+            .iter()
+            .map(|(ng, s)| {
+                let id0 = *char_to_id.get(&ng.get(0)).expect("char id missing");
+                let id1 = *char_to_id.get(&ng.get(1)).expect("char id missing");
+                let id2 = *char_to_id.get(&ng.get(2)).expect("char id missing");
+                ([id0, id1, id2], *s)
+            })
+            .collect();
+        best_layout.score = best_layout.layout.evaluate_ids(physical_layout, &tri_grams_ids);
 
         let mut rng_fast = fastrand::Rng::new();
         // initialize
@@ -108,7 +119,7 @@ impl Genetic {
 
                 // Evaluate population
                 population.par_iter_mut().for_each(|i| {
-                    i.score = i.layout.evaluate_par(physical_layout, &tri_grams_vec);
+                    i.score = i.layout.evaluate_ids(physical_layout, &tri_grams_ids);
                 });
 
                 // 完全ソートを避ける（次反復のエリート抽出は部分選択で行う）

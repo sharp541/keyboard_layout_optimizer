@@ -9,6 +9,9 @@ pub struct LogicalLayout {
     layout: [char; NUM_COLS * NUM_ROWS * NUM_LAYERS],
     char_map: HashMap<char, usize>,
     dummy_chars: HashSet<char>,
+    // 追加: 使用文字のID割り当て（固定）、ID→現在のインデックスのO(1)配列
+    char_to_id: HashMap<char, usize>,
+    id_to_index: Vec<usize>,
 }
 
 impl LogicalLayout {
@@ -20,6 +23,8 @@ impl LogicalLayout {
         let mut layout: [char; NUM_COLS * NUM_ROWS * NUM_LAYERS] =
             [' '; NUM_COLS * NUM_ROWS * NUM_LAYERS];
         let mut char_map = HashMap::new();
+        let mut char_to_id = HashMap::new();
+        let mut id_to_index: Vec<usize> = Vec::with_capacity(usable_chars.len());
         let mut dummy_chars = HashSet::new();
         // Fill layout with provided usable chars; if not enough, use unique dummy chars
         // Use Unicode Private Use Area starting at U+E000 to avoid collisions
@@ -29,6 +34,9 @@ impl LogicalLayout {
                 let ch = usable_chars[i];
                 layout[i] = ch;
                 char_map.insert(ch, i);
+                // 使用文字に連番IDを付与
+                char_to_id.insert(ch, i);
+                id_to_index.push(i);
             } else {
                 // Generate a unique dummy character that doesn't collide with usable_chars
                 let dummy_base: u32 = 0xE000; // Private Use Area start
@@ -46,7 +54,7 @@ impl LogicalLayout {
                 dummy_counter += 1;
             }
         }
-        LogicalLayout { layout, char_map, dummy_chars }
+        LogicalLayout { layout, char_map, dummy_chars, char_to_id, id_to_index }
     }
 
     pub fn evaluate(
@@ -82,9 +90,19 @@ impl LogicalLayout {
     }
 
     pub fn swap(&mut self, a: usize, b: usize) {
-        self.char_map.insert(self.layout[a], b);
-        self.char_map.insert(self.layout[b], a);
+        // 位置スワップ
+        let ca = self.layout[a];
+        let cb = self.layout[b];
+        self.char_map.insert(ca, b);
+        self.char_map.insert(cb, a);
         self.layout.swap(a, b);
+        // 使用文字ならID→インデックス配列も更新
+        if let Some(&ida) = self.char_to_id.get(&ca) {
+            self.id_to_index[ida] = b;
+        }
+        if let Some(&idb) = self.char_to_id.get(&cb) {
+            self.id_to_index[idb] = a;
+        }
     }
 
     pub fn get_char_index(&self, c: char) -> usize {
@@ -101,6 +119,9 @@ impl LogicalLayout {
     pub fn set(&mut self, index: usize, c: char) {
         self.layout[index] = c;
         self.char_map.insert(c, index);
+        if let Some(&id) = self.char_to_id.get(&c) {
+            self.id_to_index[id] = index;
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -144,5 +165,32 @@ impl LogicalLayout {
             });
             println!();
         }
+    }
+
+    // IDから現在インデックスをO(1)で取得
+    pub fn get_index_by_id(&self, id: usize) -> usize {
+        self.id_to_index[id]
+    }
+
+    // 使用文字→IDの参照を外部で使えるようにする（必要なら）
+    pub fn get_char_to_id(&self) -> &HashMap<char, usize> {
+        &self.char_to_id
+    }
+
+    // IDベース評価（トライグラムは[usize;3]のID列）
+    pub fn evaluate_ids(
+        &self,
+        physical_layout: &PhysicalLayout,
+        tri_grams_ids: &[([usize; 3], f32)],
+    ) -> f32 {
+        tri_grams_ids
+            .par_iter()
+            .map(|(ids, score)| -> f32 {
+                let k1 = self.get_index_by_id(ids[0]);
+                let k2 = self.get_index_by_id(ids[1]);
+                let k3 = self.get_index_by_id(ids[2]);
+                *score * physical_layout.get_tri_gram_cost(k1, k2, k3)
+            })
+            .sum()
     }
 }

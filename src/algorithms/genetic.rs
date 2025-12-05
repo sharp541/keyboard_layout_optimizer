@@ -1,7 +1,6 @@
 use fastrand;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
-use rand::seq::IteratorRandom;
 use rand::thread_rng;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -35,25 +34,24 @@ impl Genetic {
         early_stop_count: usize,
     ) {
         let initial_layout =
-            LogicalLayout::from_usable_chars(physical_layout, usable_chars.to_vec());
-        let mut layout = initial_layout.clone().output();
-        let mut best_layout = Individual::new(initial_layout);
+            LogicalLayout::from_usable_chars(&usable_chars.to_vec());
+        let mut best_layout = Individual::new(initial_layout.clone());
         let usable_chars_set: HashSet<char> = usable_chars.iter().cloned().collect();
         let tri_grams = ngram_db
             .get_tri_grams(&usable_chars_set)
             .expect("Failed to get tri grams");
         best_layout.evaluate(physical_layout, &tri_grams);
 
+        let mut rng_fast = fastrand::Rng::new();
         // initialize
         let mut islands = Vec::with_capacity(self.island_size);
         for _ in 0..self.island_size {
             let mut population = Vec::with_capacity(self.population_size);
             for _ in 0..self.population_size {
+                let mut individual = Individual::new(initial_layout.clone());
                 if shuffle {
-                    fastrand::shuffle(&mut layout);
+                    individual.mutate(&mut rng_fast);
                 }
-                let copy = LogicalLayout::from_usable_chars(physical_layout, layout.clone());
-                let mut individual = Individual::new(copy);
                 individual.evaluate(physical_layout, &tri_grams);
                 population.push(individual);
             }
@@ -63,7 +61,7 @@ impl Genetic {
         let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
         let mut count = 0;
         for i in 0..iterations {
-            islands.par_chunks_mut(1).for_each(|chunk| {
+            islands.chunks_mut(1).for_each(|chunk| {
                 let population = &mut chunk[0];
 
                 let sum = population.iter().map(|ind| ind.score).sum::<f32>();
@@ -76,7 +74,6 @@ impl Genetic {
 
                 // Crossover
                 let mut children: Vec<Individual> = (0..self.population_size - elite_num)
-                    .into_par_iter()
                     .map(|_| {
                         let mut rng = thread_rng();
                         let mut rng_fast = fastrand::Rng::new();
@@ -87,7 +84,8 @@ impl Genetic {
                         }
                         let parent1 = &population[parent1_index];
                         let parent2 = &population[parent2_index];
-                        let mut child = parent1.cyclic_crossover(parent2, usable_chars, &mut rng);
+                        let mut child = parent1.cyclic_crossover(parent2, &mut rng);
+                        child.layout.print();
                         child.mutate(&mut rng_fast);
                         child
                     })
@@ -97,7 +95,7 @@ impl Genetic {
                 *population = new_population;
 
                 // Evaluate population
-                population.par_iter_mut().for_each(|i| {
+                population.iter_mut().for_each(|i| {
                     i.evaluate(physical_layout, &tri_grams);
                 });
 
@@ -145,7 +143,7 @@ impl Genetic {
         }
 
         println!("best score: {}", best_layout.score);
-        physical_layout.print(&best_layout.layout());
+        best_layout.layout.print();
     }
 }
 
@@ -171,7 +169,6 @@ impl Individual {
     fn cyclic_crossover(
         &self,
         other: &Self,
-        usable_chars: &[char],
         rng: &mut ThreadRng,
     ) -> Self {
         let mut new_layout = self.layout.clone();
@@ -243,10 +240,6 @@ impl Individual {
             _ => self.random_mutation(rng),
         }
     }
-
-    fn layout(&self) -> Vec<char> {
-        self.layout.clone().output()
-    }
 }
 
 impl PartialEq for Individual {
@@ -254,37 +247,3 @@ impl PartialEq for Individual {
         self.score == other.score
     }
 }
-
-fn rand_pop(set: &mut HashSet<char>, rng: &mut ThreadRng) -> char {
-    let char = *set.iter().choose(rng).expect("No usable chars found");
-    set.remove(&char);
-    char
-}
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::keyboard_layout::PhysicalLayout;
-
-//     #[test]
-//     fn test_shift_mutation() {
-//         let cost_table = [
-//             [3.7, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.7], // 上段
-//             [3.0, 1.3, 1.1, 1.0, 1.6, 1.6, 1.0, 1.1, 1.3, 3.0], // 中段（ホームポジション）
-//             [3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 10e10, 10e10, 3.2], // 下段
-//         ];
-//         let physical = PhysicalLayout::new(cost_table).expect("Invalid cost table");
-//         let usable_chars = vec![
-//             'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
-//             'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', ',', '.',
-//         ];
-//         let logical = LogicalLayout::from_usable_chars(&physical, usable_chars);
-//         let individual = Individual::new(logical);
-//         let mut rng = fastrand::Rng::new();
-
-//         let original_layout = individual.layout();
-//         let mut test_individual = individual.clone();
-
-//         assert_ne!(test_individual.layout(), original_layout);
-//     }
-// }

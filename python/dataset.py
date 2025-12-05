@@ -25,7 +25,7 @@ ja_dataset= load_dataset("izumi-lab/cc100-ja-filter-ja-normal", split="train", s
 # %%
 qwerty_layout = set([
     'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k',
-    'l', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ' '
+    'l', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ' ', '.', ','
 ])
 
 def clean(text):

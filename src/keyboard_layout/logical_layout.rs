@@ -1,63 +1,52 @@
 use rayon::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::physical_layout::{PhysicalLayout, NUM_COLS, NUM_LAYERS, NUM_ROWS};
-use crate::n_gram::{LogicalNGram, PhysicalNGram};
-
-#[derive(Debug, Clone, Copy)]
-pub struct Key {
-    layers: [Option<char>; NUM_LAYERS],
-}
-impl Key {
-    pub fn new() -> Self {
-        Key {
-            layers: [None; NUM_LAYERS],
-        }
-    }
-
-    pub fn set(&mut self, layer: usize, c: char) {
-        self.layers[layer] = Some(c);
-    }
-
-    pub fn get(&self, layer: usize) -> Option<char> {
-        self.layers[layer]
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct KeyIndex {
-    idx: usize,
-    layer: usize,
-}
-
-impl KeyIndex {
-    pub fn new(n: usize) -> Self {
-        let idx = n % (NUM_COLS * NUM_ROWS);
-        let layer = n / (NUM_COLS * NUM_ROWS);
-        KeyIndex { idx, layer }
-    }
-}
+use crate::n_gram::LogicalNGram;
 
 #[derive(Debug, Clone)]
 pub struct LogicalLayout {
-    layout: [Key; NUM_COLS * NUM_ROWS],
-    char_map: HashMap<char, KeyIndex>,
+    layout: [char; NUM_COLS * NUM_ROWS * NUM_LAYERS],
+    char_map: HashMap<char, usize>,
+    dummy_chars: HashSet<char>,
 }
 
 impl LogicalLayout {
-    pub fn from_usable_chars(usable_chars: Vec<char>) -> Self {
+    pub fn from_usable_chars(usable_chars: &Vec<char>) -> Self {
         if usable_chars.len() > NUM_COLS * NUM_ROWS * NUM_LAYERS {
             panic!("Too many usable characters: {}", usable_chars.len());
         }
 
-        let mut layout: [Key; NUM_COLS * NUM_ROWS] = [Key::new(); NUM_COLS * NUM_ROWS];
+        let mut layout: [char; NUM_COLS * NUM_ROWS * NUM_LAYERS] =
+            [' '; NUM_COLS * NUM_ROWS * NUM_LAYERS];
         let mut char_map = HashMap::new();
-        for (i, c) in usable_chars.into_iter().enumerate() {
-            let key_index = KeyIndex::new(i);
-            layout[key_index.idx].set(key_index.layer, c);
-            char_map.insert(c, key_index);
+        let mut dummy_chars = HashSet::new();
+        // Fill layout with provided usable chars; if not enough, use unique dummy chars
+        // Use Unicode Private Use Area starting at U+E000 to avoid collisions
+        let mut dummy_counter: u32 = 0;
+        for i in 0..NUM_COLS * NUM_ROWS * NUM_LAYERS {
+            if i < usable_chars.len() {
+                let ch = usable_chars[i];
+                layout[i] = ch;
+                char_map.insert(ch, i);
+            } else {
+                // Generate a unique dummy character that doesn't collide with usable_chars
+                let dummy_base: u32 = 0xE000; // Private Use Area start
+                let mut dummy_ch = std::char::from_u32(dummy_base + dummy_counter)
+                    .expect("Failed to create dummy character");
+                // Ensure uniqueness and avoid accidental collision with usable chars
+                while usable_chars.contains(&dummy_ch) || char_map.contains_key(&dummy_ch) {
+                    dummy_counter += 1;
+                    dummy_ch = std::char::from_u32(dummy_base + dummy_counter)
+                        .expect("Failed to create dummy character");
+                }
+                layout[i] = dummy_ch;
+                char_map.insert(dummy_ch, i);
+                dummy_chars.insert(dummy_ch);
+                dummy_counter += 1;
+            }
         }
-        LogicalLayout { layout, char_map }
+        LogicalLayout { layout, char_map, dummy_chars }
     }
 
     pub fn evaluate(
@@ -66,39 +55,39 @@ impl LogicalLayout {
         tri_grams: &HashMap<LogicalNGram<3>, f32>,
     ) -> f32 {
         let cost = tri_grams
-            .par_iter()
+            .iter()
             .map(|(n_gram, score)| -> f32 {
-                let physical_n_gram = PhysicalNGram::new([
-                    self.get_char_index(n_gram.get(0)).idx,
-                    self.get_char_index(n_gram.get(1)).idx,
-                    self.get_char_index(n_gram.get(2)).idx,
-                ]);
-                *score * physical_layout.get_tri_gram_cost(&physical_n_gram)
+                let k1 = self.get_char_index(n_gram.get(0));
+                let k2 = self.get_char_index(n_gram.get(1));
+                let k3 = self.get_char_index(n_gram.get(2));
+                *score * physical_layout.get_tri_gram_cost(k1, k2, k3)
             })
             .sum();
         cost
     }
 
     pub fn swap(&mut self, a: usize, b: usize) {
-        let a_key_index = KeyIndex::new(a);
-        let b_key_index = KeyIndex::new(b);
-        let a_key_char = self.layout[a_key_index.idx]
-            .get(a_key_index.layer)
-            .expect("Invalid key index");
-        let b_key_char = self.layout[b_key_index.idx]
-            .get(b_key_index.layer)
-            .expect("Invalid key index");
-        self.layout[a_key_index.idx].set(a_key_index.layer, b_key_char);
-        self.layout[b_key_index.idx].set(b_key_index.layer, a_key_char);
-        self.char_map.insert(a_key_char, b_key_index);
-        self.char_map.insert(b_key_char, a_key_index);
+        self.char_map.insert(self.layout[a], b);
+        self.char_map.insert(self.layout[b], a);
+        self.layout.swap(a, b);
     }
 
-    pub fn get_char_index(&self, c: char) -> KeyIndex {
+    pub fn get_char_index(&self, c: char) -> usize {
         *self
             .char_map
             .get(&c)
             .expect(&format!("Character {} not found", c))
+    }
+
+    pub fn get(&self, index: usize) -> char {
+        self.layout[index]
+    }
+
+    pub fn set(&mut self, index: usize, c: char) {
+        let old_char = self.layout[index];
+        self.char_map.remove(&old_char);
+        self.layout[index] = c;
+        self.char_map.insert(c, index);
     }
 
     pub fn len(&self) -> usize {
@@ -109,7 +98,34 @@ impl LogicalLayout {
         self.char_map.len()
     }
 
-    pub fn output(self) -> [Key; NUM_COLS * NUM_ROWS] {
+    pub fn output(&self) -> [char; NUM_COLS * NUM_ROWS * NUM_LAYERS] {
         self.layout
+    }
+
+    pub fn print(&self) {
+        println!();
+        for layer in 0..NUM_LAYERS {
+            println!("Layer {}:", layer);
+            for row in 0..NUM_ROWS {
+                for col in 0..NUM_COLS {
+                    let idx = layer * (NUM_COLS * NUM_ROWS) + row * NUM_COLS + col;
+                    let ch = self.layout[idx];
+                    if col == NUM_COLS / 2 {
+                        print!("| ");
+                    }
+                    if self.dummy_chars.contains(&ch) {
+                        // Do not display dummy characters
+                        print!("  ");
+                    } else {
+                        print!("{} ", ch);
+                    }
+                }
+                println!();
+            }
+            std::iter::repeat_n("--", NUM_COLS + 1).for_each(|c| {
+                print!("{}", c);
+            });
+            println!();
+        }
     }
 }

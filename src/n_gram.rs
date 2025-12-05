@@ -1,31 +1,7 @@
 use rusqlite::{params, Connection, Result};
 use std::collections::{HashMap, HashSet};
-use std::fmt::Display;
 use std::fs;
 use std::path::Path;
-
-#[derive(Debug, Eq, Hash, PartialEq)]
-pub struct PhysicalNGram<const N: usize>([usize; N]);
-
-impl<const N: usize> PhysicalNGram<N> {
-    pub fn new(n_gram: [usize; N]) -> Self {
-        PhysicalNGram(n_gram)
-    }
-
-    pub fn get(&self, index: usize) -> usize {
-        self.0[index]
-    }
-
-    pub fn set(&mut self, index: usize, value: usize) {
-        self.0[index] = value;
-    }
-}
-
-impl<const N: usize> Display for PhysicalNGram<N> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
 
 #[derive(Debug, Eq, Hash, PartialEq)]
 pub struct LogicalNGram<const N: usize>([char; N]);

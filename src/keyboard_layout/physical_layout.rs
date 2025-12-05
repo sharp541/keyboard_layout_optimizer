@@ -1,19 +1,44 @@
 pub const NUM_ROWS: usize = 3;
 pub const NUM_COLS: usize = 10;
 pub const NUM_LAYERS: usize = 2;
+const TOTAL_KEYS: usize = NUM_ROWS * NUM_COLS * NUM_LAYERS;
 
 use std::cmp::max;
-use std::collections::HashMap;
 
 use super::hand_model::Hand;
 use crate::keyboard_layout::Finger;
-use crate::n_gram::PhysicalNGram;
+
+#[derive(Debug)]
+struct KeyLocation {
+    row: usize,
+    col: usize,
+    index: usize,
+    layer: usize,
+}
+
+impl KeyLocation {
+    pub fn new(index: usize) -> Self {
+        let layer = index / (NUM_COLS * NUM_ROWS);
+        let row = (index % (NUM_COLS * NUM_ROWS)) / NUM_COLS;
+        let col = index % NUM_COLS;
+        let index = index % (NUM_COLS * NUM_ROWS);
+        KeyLocation { row, col, layer, index }
+    }
+
+    pub fn hand(&self) -> Hand {
+        if self.col < NUM_COLS / 2 {
+            Hand::Left
+        } else {
+            Hand::Right
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct PhysicalLayout {
     cost_matrix: [f32; NUM_COLS * NUM_ROWS],
     finger_matrix: [Finger; NUM_COLS * NUM_ROWS],
-    tri_gram_cost: HashMap<PhysicalNGram<3>, f32>,
+    tri_gram_cost: [f32; TOTAL_KEYS * TOTAL_KEYS * TOTAL_KEYS],
 }
 
 impl PhysicalLayout {
@@ -21,7 +46,7 @@ impl PhysicalLayout {
         cost_matrix: [f32; NUM_COLS * NUM_ROWS],
         finger_matrix: [Finger; NUM_COLS * NUM_ROWS],
     ) -> Result<Self, &'static str> {
-        let tri_gram_cost = HashMap::new();
+        let tri_gram_cost = [0.0; TOTAL_KEYS * TOTAL_KEYS * TOTAL_KEYS];
 
         Ok(PhysicalLayout {
             cost_matrix,
@@ -31,86 +56,98 @@ impl PhysicalLayout {
     }
 
     pub fn calculate_tri_gram_cost(&mut self) {
-        let num_keys = NUM_COLS * NUM_ROWS;
+        let num_keys = NUM_COLS * NUM_ROWS * NUM_LAYERS;
         for k1 in 0..num_keys {
             for k2 in 0..num_keys {
                 for k3 in 0..num_keys {
-                    self.tri_gram_cost.insert(
-                        PhysicalNGram::new([k1, k2, k3]),
-                        self.stroke_cost(PhysicalNGram::new([k1, k2, k3])),
-                    );
+                    let cost = self.stroke_cost(k1, k2, k3);
+                    let index = self.cost_index(k1, k2, k3);
+                    self.tri_gram_cost[index] = cost;
                 }
             }
         }
     }
 
-    fn position_cost(&self, key: usize) -> f32 {
-        self.cost_matrix[key]
+    fn position_cost(&self, key: &KeyLocation) -> f32 {
+        let base = self.cost_matrix[key.index];
+        if key.layer == 0 {
+            base
+        } else {
+            base + 2.0
+        }
     }
 
-    fn finger_cost(&self, key1: usize, key2: usize) -> f32 {
-        let finger_cost = if self.finger_matrix[key1] == self.finger_matrix[key2] {
+    fn finger(&self, key: usize) -> &Finger {
+        &self.finger_matrix[key]
+    }
+
+    fn finger_cost(&self, key1: &KeyLocation, key2: &KeyLocation) -> f32 {
+        let finger_cost = if self.finger(key1.index) == self.finger(key2.index) {
             8
         } else {
             0
         };
-        let same_column = if key1 % NUM_COLS == key2 % NUM_COLS {
+        let same_column = if key1.col == key2.col {
             8
         } else {
             0
         };
-        let col_diff = max(0, ((key1 % NUM_COLS - key2 % NUM_COLS) as i32).abs() - 2);
-        let row_diff = max(0, ((key1 / NUM_COLS - key2 / NUM_COLS) as i32).abs() - 1);
+        let col_diff = max(0, (key1.col as i32 - key2.col as i32).abs() - 2);
+        let row_diff = max(0, (key1.row as i32 - key2.row as i32).abs() - 1);
         (row_diff + same_column + col_diff + finger_cost) as f32
     }
 
-    fn roll_cost(&self, keys: &[usize]) -> f32 {
+    fn roll_cost(&self, keys: &[KeyLocation]) -> f32 {
+        let mut ret = 0.0;
         for i in 0..keys.len() - 1 {
-            let finger1 = &self.finger_matrix[keys[i]];
-            let finger2 = &self.finger_matrix[keys[i + 1]];
+            let finger1 = &self.finger_matrix[keys[i].index];
+            let finger2 = &self.finger_matrix[keys[i + 1].index];
             if finger1 <= finger2 {
-                return 8.0;
+                ret += 8.0;
+            }
+            if keys[i].layer != keys[i + 1].layer {
+                ret += 4.0;
             }
         }
-        0.0
+        ret
     }
 
-    fn stroke_cost(&self, n_gram: PhysicalNGram<3>) -> f32 {
-        let key1 = n_gram.get(0);
-        let key2 = n_gram.get(1);
-        let key3 = n_gram.get(2);
-        let first_hand = self.hand(key1);
+    fn stroke_cost(&self, key1: usize, key2: usize, key3: usize) -> f32 {
+        let kl1 = KeyLocation::new(key1);
+        let kl2 = KeyLocation::new(key2);
+        let kl3 = KeyLocation::new(key3);
+        let first_hand = kl1.hand();
         let pattern = (
             true,
-            first_hand == self.hand(key2),
-            first_hand == self.hand(key3),
+            first_hand == kl2.hand(),
+            first_hand == kl3.hand(),
         );
         let cost = match pattern {
             (true, true, true) => {
-                let position_cost = self.position_cost(key1);
-                let roll_cost = self.roll_cost(&[key1, key2, key3]);
-                let finger_cost = self.finger_cost(key1, key2)
-                    + self.finger_cost(key2, key3)
-                    + self.finger_cost(key3, key1);
+                let position_cost = self.position_cost(&kl1);
+                let finger_cost = self.finger_cost(&kl1, &kl2)
+                    + self.finger_cost(&kl2, &kl3)
+                    + self.finger_cost(&kl3, &kl1);
+                let roll_cost = self.roll_cost(&[kl1, kl2, kl3]);
                 position_cost * (roll_cost + finger_cost)
             }
             (true, true, false) => {
-                let position_cost = self.position_cost(key1);
-                let finger_cost = self.finger_cost(key1, key2);
-                let roll_cost = self.roll_cost(&[key1, key2]);
-                position_cost * (finger_cost + roll_cost) + self.position_cost(key3)
+                let position_cost = self.position_cost(&kl1);
+                let finger_cost = self.finger_cost(&kl1, &kl2);
+                let roll_cost = self.roll_cost(&[kl1, kl2]);
+                position_cost * (finger_cost + roll_cost) + self.position_cost(&kl3)
             }
             (true, false, true) => {
-                let position_cost = self.position_cost(key1);
-                let finger_cost = self.finger_cost(key1, key3);
-                let roll_cost = self.roll_cost(&[key1, key3]);
-                position_cost * (finger_cost + roll_cost) + self.position_cost(key2)
+                let position_cost = self.position_cost(&kl1);
+                let finger_cost = self.finger_cost(&kl1, &kl3);
+                let roll_cost = self.roll_cost(&[kl1, kl3]);
+                position_cost * (finger_cost + roll_cost) + self.position_cost(&kl2)
             }
             (true, false, false) => {
-                let position_cost = self.position_cost(key2);
-                let finger_cost = self.finger_cost(key2, key3);
-                let roll_cost = self.roll_cost(&[key2, key3]);
-                position_cost * (finger_cost + roll_cost) + self.position_cost(key1)
+                let position_cost = self.position_cost(&kl2);
+                let finger_cost = self.finger_cost(&kl2, &kl3);
+                let roll_cost = self.roll_cost(&[kl2, kl3]);
+                position_cost * (finger_cost + roll_cost) + self.position_cost(&kl1)
             }
             _ => panic!("Invalid pattern"),
         };
@@ -121,39 +158,13 @@ impl PhysicalLayout {
         NUM_COLS * NUM_ROWS
     }
 
-    pub fn get_tri_gram_cost(&self, n_gram: &PhysicalNGram<3>) -> f32 {
-        *self
-            .tri_gram_cost
-            .get(n_gram)
-            .expect("Failed to get tri gram cost")
+    fn cost_index(&self, k1: usize, k2: usize, k3: usize) -> usize {
+        k1 * TOTAL_KEYS * TOTAL_KEYS + k2 * TOTAL_KEYS + k3
     }
 
-    fn hand(&self, index: usize) -> Hand {
-        let col = index % NUM_COLS;
-        if col < NUM_COLS / 2 {
-            Hand::Left
-        } else {
-            Hand::Right
-        }
-    }
-
-    pub fn print(&self, layout: &[char]) {
-        println!();
-        for (i, row) in layout.chunks(NUM_COLS).enumerate() {
-            for (j, key) in row.iter().enumerate() {
-                if j == NUM_COLS / 2 {
-                    print!("| ");
-                }
-                print!("{} ", key);
-                if (i + 1) * (j + 1) == NUM_COLS * NUM_ROWS {
-                    println!();
-                    std::iter::repeat_n("--", NUM_COLS + 1).for_each(|c| {
-                        print!("{}", c);
-                    });
-                }
-            }
-            println!();
-        }
+    pub fn get_tri_gram_cost(&self, k1: usize, k2: usize, k3: usize) -> f32 {
+        let index = self.cost_index(k1, k2, k3);
+        self.tri_gram_cost[index]
     }
 }
 
@@ -175,55 +186,4 @@ pub fn get_right_keys() -> Vec<usize> {
         }
     }
     keys
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::keyboard_layout::hand_model::Finger as F;
-
-    #[test]
-    fn test_physical_layout() {
-        let cost_matrix = [
-            3.0, 2.4, 2.0, 2.2, 3.2, 3.2, 2.2, 2.0, 2.4, 3.0, // 上段
-            1.6, 1.3, 1.1, 1.0, 2.9, 2.9, 1.0, 1.1, 1.3,
-            1.6, // 中段（ホームポジション）
-            3.2, 2.6, 2.3, 1.6, 3.0, 3.0, 1.6, 2.3, 2.6, 3.2, // 下段
-        ];
-        let finger_table = [
-            F::R,
-            F::R,
-            F::M,
-            F::M,
-            F::I,
-            F::I,
-            F::M,
-            F::M,
-            F::R,
-            F::R,
-            F::P,
-            F::R,
-            F::M,
-            F::I,
-            F::I,
-            F::I,
-            F::I,
-            F::M,
-            F::R,
-            F::P,
-            F::P,
-            F::R,
-            F::M,
-            F::I,
-            F::I,
-            F::I,
-            F::I,
-            F::M,
-            F::R,
-            F::P,
-        ];
-        let physical_layout = PhysicalLayout::new(cost_matrix, finger_table).unwrap();
-        assert_eq!(physical_layout.position_cost(0), 3.0);
-        assert_eq!(physical_layout.position_cost(48), 100.0);
-    }
 }

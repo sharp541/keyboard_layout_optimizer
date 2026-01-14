@@ -73,7 +73,7 @@ impl PhysicalLayout {
         if key.layer == 0 {
             base
         } else {
-            base + 2.0
+            base + 8.0
         }
     }
 
@@ -105,8 +105,11 @@ impl PhysicalLayout {
             if finger1 <= finger2 {
                 ret += 8.0;
             }
+            if finger1.same(&Finger::P) {
+                ret += 8.0;
+            }
             if keys[i].layer != keys[i + 1].layer {
-                ret += 4.0;
+                ret += 8.0;
             }
         }
         ret

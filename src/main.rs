@@ -17,7 +17,7 @@ fn main() -> Result<(), std::io::Error> {
     let cost_table: [f32; NUM_COLS * NUM_ROWS] = [
         2.5, 1.5, 1.4, 2.8, 10e10, 10e10, 2.8, 1.4, 1.5, 2.5,
         2.0, 1.3, 1.1, 1.0, 2.2, 2.2, 1.0, 1.1, 1.3, 2.0,
-        3.2, 10e10, 10e10, 1.6, 10e10, 10e10, 1.6, 10e10, 10e10, 3.2,
+        10e10, 10e10, 10e10, 1.6, 10e10, 10e10, 1.6, 10e10, 10e10, 10e10,
     ];
     let finger_table: [F; NUM_COLS * NUM_ROWS] = [
         F::R, F::R, F::M, F::M, F::I, F::I, F::M, F::M, F::R, F::R,

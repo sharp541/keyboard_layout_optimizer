@@ -74,8 +74,7 @@ def login_huggingface():
         with open("./.env/token.json", "r", encoding="utf-8") as f:
             config = json.load(f)
             access_key = config["access_key"]
-            os.environ["CURL_CA_BUNDLE"] = config["ca_bundle"]
-            login(access_key)
+        login(access_key)
 
 
 def init_command(data_dir="../data"):
@@ -98,7 +97,7 @@ def init_command(data_dir="../data"):
     with open(en_raw_path, "w", encoding="utf-8") as f:
         def selector(x): return x["content"] if "content" in x else None
         sampled_files = sample_dataset(
-            dataset, selector, max_size=1 * 1024 * 1024)
+            dataset, selector, max_size=4 * 1024 * 1024)
         text = "".join(sampled_files)
         f.write(f"{text}")
     print(f"英語生データを保存しました: {en_raw_path}")
@@ -110,7 +109,7 @@ def init_command(data_dir="../data"):
     with open(ja_raw_path, "w", encoding="utf-8") as f:
         def selector(x): return x["text"] if "text" in x else None
         sampled_files = sample_dataset(
-            ja_dataset, selector, max_size=2 * 1024 * 1024)
+            ja_dataset, selector, max_size=4 * 1024 * 1024)
         text = "".join(sampled_files)
         f.write(f"{text}")
     print(f"日本語生データを保存しました: {ja_raw_path}")

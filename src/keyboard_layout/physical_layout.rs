@@ -106,10 +106,10 @@ impl PhysicalLayout {
                 ret += 8.0;
             }
             if finger1.same(&Finger::P) {
-                ret += 8.0;
+                ret += 16.0;
             }
             if keys[i].layer != keys[i + 1].layer {
-                ret += 8.0;
+                ret += 16.0;
             }
         }
         ret

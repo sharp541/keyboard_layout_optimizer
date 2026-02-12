@@ -74,6 +74,7 @@ def login_huggingface():
         with open("./.env/token.json", "r", encoding="utf-8") as f:
             config = json.load(f)
             access_key = config["access_key"]
+            os.environ["REQUESTS_CA_BUNDLE"] = config["ca_bundle"]
         login(access_key)
 
 

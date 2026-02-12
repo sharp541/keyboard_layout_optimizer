@@ -92,9 +92,7 @@ impl PhysicalLayout {
         } else {
             0
         };
-        let col_diff = max(0, (key1.col as i32 - key2.col as i32).abs() - 2);
-        let row_diff = max(0, (key1.row as i32 - key2.row as i32).abs() - 1);
-        (row_diff + same_column + col_diff + finger_cost) as f32
+        (same_column + finger_cost) as f32
     }
 
     fn roll_cost(&self, keys: &[KeyLocation]) -> f32 {
@@ -106,7 +104,7 @@ impl PhysicalLayout {
                 ret += 8.0;
             }
             if finger1.same(&Finger::P) {
-                ret += 16.0;
+                ret += 8.0;
             }
             if keys[i].layer != keys[i + 1].layer {
                 ret += 16.0;

@@ -15,8 +15,8 @@ fn main() -> Result<(), std::io::Error> {
     let n_gram_db = NGramDB::load(db_path).expect("Failed to load NGramDB");
 
     let cost_table: [f32; NUM_COLS * NUM_ROWS] = [
-        2.5, 1.5, 1.4, 2.8, 10e10, 10e10, 2.8, 1.4, 1.5, 2.5,
-        1.5, 1.3, 1.1, 1.0, 2.2, 2.2, 1.0, 1.1, 1.3, 1.5,
+        2.5, 1.2, 1.1, 2.8, 10e10, 10e10, 2.8, 1.1, 1.2, 2.5,
+        1.3, 1.4, 1.5, 1.0, 2.2, 2.2, 1.0, 1.5, 1.4, 1.3,
         10e10, 10e10, 10e10, 1.6, 10e10, 10e10, 1.6, 10e10, 10e10, 10e10,
     ];
     let finger_table: [F; NUM_COLS * NUM_ROWS] = [

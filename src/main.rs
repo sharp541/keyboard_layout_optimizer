@@ -15,14 +15,14 @@ fn main() -> Result<(), std::io::Error> {
     let n_gram_db = NGramDB::load(db_path).expect("Failed to load NGramDB");
 
     let cost_table: [f32; NUM_COLS * NUM_ROWS] = [
-        2.5, 1.2, 1.1, 2.8, 10e10, 10e10, 2.8, 1.1, 1.2, 2.5,
-        1.3, 1.4, 1.5, 1.0, 2.2, 2.2, 1.0, 1.5, 1.4, 1.3,
-        10e10, 10e10, 10e10, 1.6, 10e10, 10e10, 1.6, 10e10, 10e10, 10e10,
+        2.2, 1.0, 1.0, 2.8, 10e10, 10e10, 2.8, 1.0, 1.02, 2.2,               // upper row
+        1.3, 1.0, 1.0, 1.0, 2.5, 2.5, 1.0, 1.0, 1.0, 1.3,                   // middle row
+        10e10, 10e10, 10e10, 1.6, 10e10, 10e10, 1.6, 10e10, 10e10, 10e10,   // lower row
     ];
     let finger_table: [F; NUM_COLS * NUM_ROWS] = [
-        F::R, F::R, F::M, F::M, F::I, F::I, F::M, F::M, F::R, F::R,
-        F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P,
-        F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P,
+        F::R, F::R, F::M, F::M, F::I, F::I, F::M, F::M, F::R, F::R,         // upper row
+        F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P,         // middle row
+        F::P, F::R, F::M, F::I, F::I, F::I, F::I, F::M, F::R, F::P,         // lower row
     ];
     let mut physical_layout =
         PhysicalLayout::new(cost_table, finger_table).expect("Invalid cost table");

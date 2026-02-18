@@ -30,13 +30,14 @@ impl Genetic {
         iterations: usize,
         shuffle: bool,
         early_stop_count: usize,
+        ja_weight: f32,
+        en_weight: f32,
     ) {
-        let initial_layout =
-            LogicalLayout::from_usable_chars(usable_chars);
+        let initial_layout = LogicalLayout::from_usable_chars(usable_chars);
         let mut best_layout = Individual::new(initial_layout.clone());
         let usable_chars_set: HashSet<char> = usable_chars.iter().cloned().collect();
         let tri_grams = ngram_db
-            .get_tri_grams(&usable_chars_set)
+            .get_tri_grams_weighted(&usable_chars_set, ja_weight, en_weight)
             .expect("Failed to get tri grams");
         // 使用文字に連番IDを付与（初期レイアウトと同一順）
         let char_to_id: HashMap<char, usize> = usable_chars
@@ -54,7 +55,9 @@ impl Genetic {
                 ([id0, id1, id2], *s)
             })
             .collect();
-        best_layout.score = best_layout.layout.evaluate_ids(physical_layout, &tri_grams_ids);
+        best_layout.score = best_layout
+            .layout
+            .evaluate_ids(physical_layout, &tri_grams_ids);
 
         let mut rng_fast = fastrand::Rng::new();
         // initialize
@@ -82,10 +85,12 @@ impl Genetic {
                 // エリート抽出：全体ソートを避け、最小スコアの上位elite_numのみ選ぶ
                 let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
                 for _ in 0..elite_num {
-                    if let Some((best_idx, _)) = population
-                        .iter()
-                        .enumerate()
-                        .min_by(|(_, a), (_, b)| a.score.partial_cmp(&b.score).expect("Failed to compare scores"))
+                    if let Some((best_idx, _)) =
+                        population.iter().enumerate().min_by(|(_, a), (_, b)| {
+                            a.score
+                                .partial_cmp(&b.score)
+                                .expect("Failed to compare scores")
+                        })
                     {
                         new_population.push(population[best_idx].clone());
                         // 重複選出を避けるため、その個体のscoreを一時的に最大化
@@ -94,7 +99,8 @@ impl Genetic {
                 }
 
                 // Crossover
-                let mut children: Vec<Individual> = Vec::with_capacity(self.population_size - elite_num);
+                let mut children: Vec<Individual> =
+                    Vec::with_capacity(self.population_size - elite_num);
                 // トーナメント選択（最小化）：k=3
                 let k = 3usize;
                 for _ in 0..(self.population_size - elite_num) {
@@ -131,16 +137,22 @@ impl Genetic {
                     // 各島の最良個体（最小スコア）を取得
                     let best_individual = islands[idx]
                         .iter()
-                        .min_by(|a, b| a.score.partial_cmp(&b.score).expect("Failed to compare scores"))
+                        .min_by(|a, b| {
+                            a.score
+                                .partial_cmp(&b.score)
+                                .expect("Failed to compare scores")
+                        })
                         .cloned()
                         .expect("Island population should not be empty");
                     let next_idx = (idx + 1) % islands.len();
                     let next_population = &mut islands[next_idx];
                     // 次島の最悪個体（最大スコア）を置換
-                    if let Some((worst_idx, _)) = next_population
-                        .iter()
-                        .enumerate()
-                        .max_by(|(_, a), (_, b)| a.score.partial_cmp(&b.score).expect("Failed to compare scores"))
+                    if let Some((worst_idx, _)) =
+                        next_population.iter().enumerate().max_by(|(_, a), (_, b)| {
+                            a.score
+                                .partial_cmp(&b.score)
+                                .expect("Failed to compare scores")
+                        })
                     {
                         next_population[worst_idx] = best_individual;
                     }
@@ -160,14 +172,17 @@ impl Genetic {
                 }
             }
 
-            if i % 100 == 0 {
+            if i % 1000 == 0 {
                 println!("iteration: {} / {}", i, iterations);
                 println!("best score: {}", best_layout.score);
             }
 
             count += 1;
             if count > early_stop_count {
-                println!("No improvement for {} iterations, stopping...", early_stop_count);
+                println!(
+                    "No improvement for {} iterations, stopping...",
+                    early_stop_count
+                );
                 break;
             }
         }
@@ -196,11 +211,7 @@ impl Individual {
         self.score = self.layout.evaluate(physical_layout, tri_grams);
     }
 
-    fn cyclic_crossover(
-        &self,
-        other: &Self,
-        rng: &mut ThreadRng,
-    ) -> Self {
+    fn cyclic_crossover(&self, other: &Self, rng: &mut ThreadRng) -> Self {
         // Cyclic crossover for permutations:
         // Start from a random index, follow the cycle of positions defined
         // by mapping parent1's value into the index where that value appears in parent2.

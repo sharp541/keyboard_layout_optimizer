@@ -3,14 +3,11 @@ pub const NUM_COLS: usize = 10;
 pub const NUM_LAYERS: usize = 2;
 const TOTAL_KEYS: usize = NUM_ROWS * NUM_COLS * NUM_LAYERS;
 
-use std::cmp::max;
-
 use super::hand_model::Hand;
 use crate::keyboard_layout::Finger;
 
 #[derive(Debug)]
 struct KeyLocation {
-    row: usize,
     col: usize,
     index: usize,
     layer: usize,
@@ -19,10 +16,14 @@ struct KeyLocation {
 impl KeyLocation {
     pub fn new(index: usize) -> Self {
         let layer = index / (NUM_COLS * NUM_ROWS);
-        let row = (index % (NUM_COLS * NUM_ROWS)) / NUM_COLS;
+        // let row = (index % (NUM_COLS * NUM_ROWS)) / NUM_COLS;
         let col = index % NUM_COLS;
         let index = index % (NUM_COLS * NUM_ROWS);
-        KeyLocation { row, col, layer, index }
+        KeyLocation {
+            col,
+            layer,
+            index,
+        }
     }
 
     pub fn hand(&self) -> Hand {
@@ -87,11 +88,7 @@ impl PhysicalLayout {
         } else {
             0
         };
-        let same_column = if key1.col == key2.col {
-            8
-        } else {
-            0
-        };
+        let same_column = if key1.col == key2.col { 8 } else { 0 };
         (same_column + finger_cost) as f32
     }
 
@@ -118,11 +115,7 @@ impl PhysicalLayout {
         let kl2 = KeyLocation::new(key2);
         let kl3 = KeyLocation::new(key3);
         let first_hand = kl1.hand();
-        let pattern = (
-            true,
-            first_hand == kl2.hand(),
-            first_hand == kl3.hand(),
-        );
+        let pattern = (true, first_hand == kl2.hand(), first_hand == kl3.hand());
         let cost = match pattern {
             (true, true, true) => {
                 let position_cost = self.position_cost(&kl1);

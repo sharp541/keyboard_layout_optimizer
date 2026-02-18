@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::env;
 use std::path::Path;
 
 use keyboard_layout_optimizer::algorithms::Genetic;
@@ -6,13 +7,74 @@ use keyboard_layout_optimizer::keyboard_layout::Finger as F;
 use keyboard_layout_optimizer::keyboard_layout::*;
 use keyboard_layout_optimizer::n_gram::NGramDB;
 
+fn parse_weights_from_args() -> Result<(f32, f32), String> {
+    let mut ja_weight = 0.5_f32;
+    let mut en_weight = 0.5_f32;
+
+    let mut args = env::args().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--ja-weight" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| "--ja-weight requires a numeric value".to_string())?;
+                ja_weight = value
+                    .parse::<f32>()
+                    .map_err(|_| format!("invalid --ja-weight value: {value}"))?;
+            }
+            "--en-weight" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| "--en-weight requires a numeric value".to_string())?;
+                en_weight = value
+                    .parse::<f32>()
+                    .map_err(|_| format!("invalid --en-weight value: {value}"))?;
+            }
+            _ => {
+                return Err(format!(
+                    "unknown argument: {arg} (supported: --ja-weight <f32>, --en-weight <f32>)"
+                ));
+            }
+        }
+    }
+
+    if ja_weight < 0.0 || en_weight < 0.0 {
+        return Err("weights must be non-negative".to_string());
+    }
+
+    let sum = ja_weight + en_weight;
+    if sum <= f32::EPSILON {
+        return Err("sum of --ja-weight and --en-weight must be > 0".to_string());
+    }
+
+    Ok((ja_weight / sum, en_weight / sum))
+}
+
 fn main() -> Result<(), std::io::Error> {
+    let (ja_weight, en_weight) = parse_weights_from_args()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+
     let source_paths = vec![Path::new("data/ja.txt"), Path::new("data/en.txt")];
     let db_path = Path::new("data/ja_en.db");
     if !db_path.exists() {
         let _ = NGramDB::new(&source_paths, db_path).expect("Failed to create NGramDB");
     }
     let n_gram_db = NGramDB::load(db_path).expect("Failed to load NGramDB");
+
+    if let Some((ja_ratio, en_ratio)) = n_gram_db
+        .get_source_size_ratios()
+        .expect("Failed to get source ratios")
+    {
+        println!(
+            "stored source size ratio (ja/en): {:.4} / {:.4}",
+            ja_ratio, en_ratio
+        );
+    }
+
+    println!(
+        "evaluation weights (ja/en): {:.4} / {:.4}",
+        ja_weight, en_weight
+    );
 
     let cost_table: [f32; NUM_COLS * NUM_ROWS] = [
         2.2, 1.0, 1.0, 2.8, 10e10, 10e10, 2.8, 1.0, 1.02, 2.2,               // upper row
@@ -36,8 +98,8 @@ fn main() -> Result<(), std::io::Error> {
 
     let custom_layout_set: HashSet<char> = custom_layout.iter().cloned().collect();
     let tri_grams = n_gram_db
-        .get_tri_grams(&custom_layout_set)
-        .expect("Failed to get tri grams");
+        .get_tri_grams_weighted(&custom_layout_set, ja_weight, en_weight)
+        .expect("Failed to get weighted tri grams");
 
     let custom = LogicalLayout::from_usable_chars(custom_layout.as_ref());
     let score = custom.evaluate(&physical_layout, &tri_grams);
@@ -46,7 +108,16 @@ fn main() -> Result<(), std::io::Error> {
 
     let algorithm = Genetic::new(32, 16);
 
-    algorithm.optimize(&physical_layout, &custom_layout, &n_gram_db, 40000, true, 3000);
+    algorithm.optimize(
+        &physical_layout,
+        &custom_layout,
+        &n_gram_db,
+        40000,
+        true,
+        3000,
+        ja_weight,
+        en_weight,
+    );
 
     Ok(())
 }

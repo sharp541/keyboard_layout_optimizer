@@ -54,7 +54,13 @@ impl LogicalLayout {
                 dummy_counter += 1;
             }
         }
-        LogicalLayout { layout, char_map, dummy_chars, char_to_id, id_to_index }
+        LogicalLayout {
+            layout,
+            char_map,
+            dummy_chars,
+            char_to_id,
+            id_to_index,
+        }
     }
 
     pub fn evaluate(

@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 
 use crate::azik_extension::{
-    AzikExtensionToken, AZIK_EXTENSION_TOKENS, AZIK_EXTENSION_TOKEN_COUNT,
+    can_host_azik_extension, AzikExtensionToken, AZIK_EXTENSION_TOKENS, AZIK_EXTENSION_TOKEN_COUNT,
 };
 use crate::keyboard_layout::{
     LayoutLookup, LogicalLayout, PhysicalLayout, NUM_COLS, NUM_LAYERS, NUM_ROWS,
@@ -429,6 +429,8 @@ impl Individual {
     }
 
     fn repair_extensions(&mut self, rng: &mut fastrand::Rng) {
+        self.repair_base_layout_extension_capacity(rng);
+
         let mut assignments = [None; AZIK_EXTENSION_TOKEN_COUNT];
         let mut occupied = [false; TOTAL_LOGICAL_KEYS];
         let mut hostable_count = 0usize;
@@ -487,6 +489,32 @@ impl Individual {
         let assignments = complete_extension_parent_indices(&assignments)
             .expect("repair should restore every AZIK extension");
         self.rebuild_extensions(&assignments);
+    }
+
+    fn repair_base_layout_extension_capacity(&mut self, rng: &mut fastrand::Rng) {
+        let layer_zero_len = NUM_COLS * NUM_ROWS;
+        let required = AZIK_EXTENSION_TOKEN_COUNT;
+
+        if self.layout.hostable_extension_indices().len() >= required {
+            return;
+        }
+
+        let mut layer_zero_gaps = (0..layer_zero_len)
+            .filter(|&index| !self.layout.can_host_extension(index))
+            .collect::<Vec<_>>();
+        let mut layer_one_hosts = (layer_zero_len..self.layout.len())
+            .filter(|&index| can_host_azik_extension(self.layout.get(index)))
+            .collect::<Vec<_>>();
+
+        shuffle_slice(&mut layer_zero_gaps, rng);
+        shuffle_slice(&mut layer_one_hosts, rng);
+
+        for (gap_index, host_index) in layer_zero_gaps.into_iter().zip(layer_one_hosts) {
+            if self.layout.hostable_extension_indices().len() >= required {
+                break;
+            }
+            self.layout.swap(gap_index, host_index);
+        }
     }
 
     fn mutate(&mut self, rng: &mut fastrand::Rng) {
@@ -919,6 +947,29 @@ mod tests {
         individual.repair_extensions(&mut fastrand::Rng::with_seed(11));
 
         assert_valid_extension_assignments(&individual.layout);
+    }
+
+    #[test]
+    fn repair_extensions_restores_layer_zero_capacity_before_reassigning_tokens() {
+        let mut individual = Individual::new(layout_for_tests());
+
+        for index in 0..4 {
+            individual.layout.swap(index, NUM_COLS * NUM_ROWS + index);
+        }
+
+        assert!(
+            individual.layout.hostable_extension_indices().len() < AZIK_EXTENSION_TOKENS.len(),
+            "test should reduce layer-0 extension capacity"
+        );
+
+        individual.repair_extensions(&mut fastrand::Rng::with_seed(19));
+
+        assert_valid_extension_assignments(&individual.layout);
+        assert!(individual
+            .layout
+            .extension_assignments()
+            .iter()
+            .all(|(index, _)| *index < NUM_COLS * NUM_ROWS));
     }
 
     #[test]

@@ -330,6 +330,10 @@ impl LogicalLayout {
     }
 
     pub fn can_host_extension(&self, index: usize) -> bool {
+        if !self.is_layer_zero_index(index) {
+            return false;
+        }
+
         self.layout
             .get(index)
             .copied()
@@ -456,6 +460,10 @@ impl LogicalLayout {
             self.extension_parent_indices[token.as_usize()] = None;
         }
     }
+
+    fn is_layer_zero_index(&self, index: usize) -> bool {
+        index < NUM_COLS * NUM_ROWS
+    }
 }
 
 #[cfg(test)]
@@ -526,6 +534,25 @@ mod tests {
                     base_char: _
                 }
             ));
+            assert_eq!(
+                err,
+                LogicalLayoutError::KeyCannotHostExtension { index, base_char }
+            );
+        }
+    }
+
+    #[test]
+    fn layer_one_keys_cannot_hold_extensions() {
+        let mut usable_chars = vec!['a'; NUM_COLS * NUM_ROWS];
+        usable_chars.extend(['k', 's', 't']);
+        let mut layout = LogicalLayout::from_usable_chars(&usable_chars);
+
+        for index in [NUM_COLS * NUM_ROWS, NUM_COLS * NUM_ROWS + 1] {
+            let err = layout
+                .assign_extension(index, AzikExtensionToken::Ann)
+                .expect_err("layer 1 should reject AZIK extensions");
+
+            let base_char = layout.get(index);
             assert_eq!(
                 err,
                 LogicalLayoutError::KeyCannotHostExtension { index, base_char }
@@ -736,6 +763,7 @@ mod tests {
                 .get_extension_parent_index(token)
                 .expect("every token should get a default parent");
             assert!(layout.can_host_extension(index));
+            assert!(index < NUM_COLS * NUM_ROWS);
             assert_eq!(layout.resolve_char_index(token.as_char()), Some(index));
         }
     }

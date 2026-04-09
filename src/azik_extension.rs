@@ -116,6 +116,10 @@ pub fn is_consonant(c: char) -> bool {
     c.is_ascii_lowercase() && !is_vowel(c)
 }
 
+pub fn can_host_azik_extension(c: char) -> bool {
+    is_consonant(c) && !matches!(c, 'h' | 'y')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,6 +168,17 @@ mod tests {
 
         for non_consonant in ['A', '1', '-', AzikExtensionToken::Ann.as_char()] {
             assert!(!is_consonant(non_consonant));
+        }
+    }
+
+    #[test]
+    fn azik_extension_hosts_exclude_h_and_y() {
+        for host in ['k', 's', 't', 'n', 'm', 'r', 'w', 'z'] {
+            assert!(can_host_azik_extension(host));
+        }
+
+        for forbidden in ['h', 'y', 'a', '1'] {
+            assert!(!can_host_azik_extension(forbidden));
         }
     }
 }

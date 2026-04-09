@@ -588,13 +588,13 @@ mod tests {
 
     fn layout_for_tests() -> LogicalLayout {
         LogicalLayout::from_usable_chars(&[
-            'k', 's', 't', 'n', 'h', 'm', 'y', 'r', 'w', 'z', 'd', 'g', 'b', 'p', 'f',
+            'k', 's', 't', 'n', 'm', 'r', 'w', 'z', 'd', 'g', 'b', 'p', 'f', 'h', 'y',
         ])
     }
 
     fn mixed_layout_for_tests() -> LogicalLayout {
         LogicalLayout::from_usable_chars(&[
-            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'h', 'o', 'm', 'y', 'r', 'w', 'z',
+            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'm', 'o', 'r', 'w', 'z', 'd', 'h', 'y',
         ])
     }
 
@@ -763,7 +763,7 @@ mod tests {
     fn base_crossover_changes_only_base_layout_when_hostability_is_stable() {
         let left = Individual::new(layout_for_tests());
         let mut right_layout = LogicalLayout::from_usable_chars(&[
-            'p', 'f', 'b', 'g', 'd', 'z', 'w', 'r', 'y', 'm', 'h', 'n', 't', 's', 'k',
+            'p', 'f', 'b', 'g', 'd', 'z', 'w', 'r', 'm', 'n', 't', 's', 'k', 'h', 'y',
         ]);
         right_layout.clear_extensions();
         right_layout

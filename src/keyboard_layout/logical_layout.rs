@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::physical_layout::{PhysicalLayout, NUM_COLS, NUM_LAYERS, NUM_ROWS};
 use crate::azik_extension::{
-    is_consonant, AzikExtensionToken, AZIK_EXTENSION_TOKENS, AZIK_EXTENSION_TOKEN_COUNT,
+    can_host_azik_extension, AzikExtensionToken, AZIK_EXTENSION_TOKENS, AZIK_EXTENSION_TOKEN_COUNT,
 };
 use crate::n_gram::LogicalNGram;
 
@@ -333,7 +333,7 @@ impl LogicalLayout {
         self.layout
             .get(index)
             .copied()
-            .is_some_and(|c| !self.dummy_chars.contains(&c) && is_consonant(c))
+            .is_some_and(|c| !self.dummy_chars.contains(&c) && can_host_azik_extension(c))
     }
 
     pub fn key_label(&self, index: usize) -> Option<String> {
@@ -507,6 +507,30 @@ mod tests {
                 base_char: 'a'
             }
         ));
+    }
+
+    #[test]
+    fn h_and_y_keys_cannot_hold_extensions() {
+        let mut layout = LogicalLayout::from_usable_chars(&['h', 'y', 'k']);
+
+        for index in [0, 1] {
+            let err = layout
+                .assign_extension(index, AzikExtensionToken::Ann)
+                .expect_err("h and y should reject AZIK extensions");
+
+            let base_char = layout.get(index);
+            assert!(matches!(
+                err,
+                LogicalLayoutError::KeyCannotHostExtension {
+                    index: _,
+                    base_char: _
+                }
+            ));
+            assert_eq!(
+                err,
+                LogicalLayoutError::KeyCannotHostExtension { index, base_char }
+            );
+        }
     }
 
     #[test]
@@ -702,7 +726,7 @@ mod tests {
     #[test]
     fn default_azik_extensions_are_assigned_to_consonant_keys_only() {
         let mut layout = LogicalLayout::from_usable_chars(&[
-            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'h', 'o', 'm', 'y', 'r', 'w', 'z',
+            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'h', 'o', 'm', 'y', 'r', 'w', 'z', 'd',
         ]);
 
         layout.assign_default_azik_extensions();
@@ -719,7 +743,7 @@ mod tests {
     #[test]
     fn default_azik_extensions_assign_each_token_and_parent_once() {
         let mut layout = LogicalLayout::from_usable_chars(&[
-            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'h', 'o', 'm', 'y', 'r', 'w', 'z',
+            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'h', 'o', 'm', 'y', 'r', 'w', 'z', 'd',
         ]);
 
         layout.assign_default_azik_extensions();

@@ -127,7 +127,11 @@ impl Genetic {
                     // randのThreadRngは一つを共有
                     let mut rng = rand::thread_rng();
                     let parent2 = &population[p2];
-                    let mut child = parent1.cyclic_crossover(parent2, &mut rng);
+                    let mut child = if local_rng.u8(0..2) == 0 {
+                        parent1.base_crossover(parent2, &mut rng)
+                    } else {
+                        parent1.extension_crossover(parent2, &mut local_rng)
+                    };
                     child.mutate(&mut local_rng);
                     children.push(child);
                 }
@@ -226,7 +230,7 @@ impl Individual {
         self.score = self.layout.evaluate(physical_layout, tri_grams);
     }
 
-    fn cyclic_crossover(&self, other: &Self, rng: &mut ThreadRng) -> Self {
+    fn base_crossover<R: Rng + ?Sized>(&self, other: &Self, rng: &mut R) -> Self {
         // Cyclic crossover for permutations:
         // Start from a random index, follow the cycle of positions defined
         // by mapping parent1's value into the index where that value appears in parent2.
@@ -254,20 +258,21 @@ impl Individual {
             idx = next_idx;
         }
 
-        child_layout.clear_extensions();
-        for (index, token) in select_extension_assignments(self, other, rng) {
-            child_layout
-                .assign_extension(index, token)
-                .expect("selected extension assignments should stay valid");
-        }
-
         let mut child = Self::new(child_layout);
         let mut repair_rng = fastrand::Rng::new();
         child.repair_extensions(&mut repair_rng);
         child
     }
 
-    fn random_mutation(&mut self, rng: &mut fastrand::Rng) {
+    fn extension_crossover(&self, other: &Self, rng: &mut fastrand::Rng) -> Self {
+        let mut child = self.clone();
+        let assignments = crossover_extension_assignments(&child.layout, self, other, rng);
+        child.rebuild_extensions(&assignments);
+        child.repair_extensions(rng);
+        child
+    }
+
+    fn base_mutation(&mut self, rng: &mut fastrand::Rng) {
         let Some((a, b)) = self.pick_base_mutation_indices(rng) else {
             return;
         };
@@ -399,23 +404,78 @@ impl Individual {
         let mutation_type = rng.u8(0..5);
         match mutation_type {
             0 => (),
-            1 | 2 => self.random_mutation(rng),
+            1 | 2 => self.base_mutation(rng),
             _ => self.extension_mutation(rng),
         }
     }
 }
 
-fn select_extension_assignments(
+fn crossover_extension_assignments(
+    layout: &LogicalLayout,
     left: &Individual,
     right: &Individual,
-    rng: &mut ThreadRng,
+    rng: &mut fastrand::Rng,
 ) -> Vec<(usize, AzikExtensionToken)> {
-    let source = if rng.gen_bool(0.5) {
-        &left.layout
-    } else {
-        &right.layout
-    };
-    source.extension_assignments()
+    let left_assignments = extension_assignment_map(left);
+    let right_assignments = extension_assignment_map(right);
+    let mut occupied_indices = HashSet::new();
+    let mut assignments = Vec::with_capacity(AZIK_EXTENSION_TOKENS.len());
+    let mut tokens = AZIK_EXTENSION_TOKENS.to_vec();
+    shuffle_slice(&mut tokens, rng);
+
+    for token in tokens {
+        let pick_left_first = rng.u8(0..2) == 0;
+        let candidate_indices = if pick_left_first {
+            [
+                left_assignments.get(&token).copied(),
+                right_assignments.get(&token).copied(),
+            ]
+        } else {
+            [
+                right_assignments.get(&token).copied(),
+                left_assignments.get(&token).copied(),
+            ]
+        };
+
+        if let Some(index) = candidate_indices
+            .into_iter()
+            .flatten()
+            .find(|index| layout.can_host_extension(*index) && !occupied_indices.contains(index))
+        {
+            occupied_indices.insert(index);
+            assignments.push((index, token));
+        }
+    }
+
+    let mut available_indices = layout
+        .hostable_extension_indices()
+        .into_iter()
+        .filter(|index| !occupied_indices.contains(index))
+        .collect::<Vec<_>>();
+    shuffle_slice(&mut available_indices, rng);
+
+    for token in AZIK_EXTENSION_TOKENS {
+        if assignments.iter().any(|(_, assigned)| *assigned == token) {
+            continue;
+        }
+
+        let index = available_indices
+            .pop()
+            .expect("enough hostable keys should exist for all AZIK extensions");
+        assignments.push((index, token));
+    }
+
+    assignments.sort_by_key(|(index, _)| *index);
+    assignments
+}
+
+fn extension_assignment_map(individual: &Individual) -> HashMap<AzikExtensionToken, usize> {
+    individual
+        .layout
+        .extension_assignments()
+        .into_iter()
+        .map(|(index, token)| (token, index))
+        .collect()
 }
 
 fn shuffle_slice<T>(slice: &mut [T], rng: &mut fastrand::Rng) {
@@ -501,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn random_mutation_repairs_extensions_after_base_layout_changes() {
+    fn base_mutation_repairs_extensions_after_base_layout_changes() {
         let mut saw_base_layout_change = false;
         let mut saw_cross_bucket_swap = false;
 
@@ -513,7 +573,7 @@ mod tests {
                 .map(|index| individual.layout.can_host_extension(index))
                 .collect::<Vec<_>>();
 
-            individual.random_mutation(&mut fastrand::Rng::with_seed(seed));
+            individual.base_mutation(&mut fastrand::Rng::with_seed(seed));
 
             saw_base_layout_change |= individual.layout.output() != before_layout;
             let after_hostable = (0..individual.layout.len())
@@ -616,6 +676,115 @@ mod tests {
             .expect("thread should spawn")
             .join()
             .expect("thread should finish");
+    }
+
+    #[test]
+    fn base_crossover_changes_only_base_layout_when_hostability_is_stable() {
+        let left = Individual::new(layout_for_tests());
+        let mut right_layout = LogicalLayout::from_usable_chars(&[
+            'p', 'f', 'b', 'g', 'd', 'z', 'w', 'r', 'y', 'm', 'h', 'n', 't', 's', 'k',
+        ]);
+        right_layout.clear_extensions();
+        right_layout
+            .assign_extension(0, AzikExtensionToken::Ann)
+            .expect("index 0 should host ann");
+        right_layout
+            .assign_extension(1, AzikExtensionToken::Inn)
+            .expect("index 1 should host inn");
+        right_layout
+            .assign_extension(2, AzikExtensionToken::Unn)
+            .expect("index 2 should host unn");
+        right_layout
+            .assign_extension(3, AzikExtensionToken::Enn)
+            .expect("index 3 should host enn");
+        right_layout
+            .assign_extension(4, AzikExtensionToken::Onn)
+            .expect("index 4 should host onn");
+        right_layout
+            .assign_extension(5, AzikExtensionToken::Ai)
+            .expect("index 5 should host ai");
+        right_layout
+            .assign_extension(6, AzikExtensionToken::Uu)
+            .expect("index 6 should host uu");
+        right_layout
+            .assign_extension(7, AzikExtensionToken::Ei)
+            .expect("index 7 should host ei");
+        right_layout
+            .assign_extension(8, AzikExtensionToken::Ou)
+            .expect("index 8 should host ou");
+        let right = Individual::new(right_layout);
+
+        let before_base = right.layout.output();
+        let before_extensions = right.layout.extension_assignments();
+        let mut saw_base_change = false;
+
+        for seed in 0..32 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let child = left.base_crossover(&right, &mut rng);
+            saw_base_change |= child.layout.output() != before_base;
+            assert_eq!(child.layout.extension_assignments(), before_extensions);
+            for token in AZIK_EXTENSION_TOKENS {
+                let index = child
+                    .layout
+                    .get_extension_parent_index(token)
+                    .expect("base crossover should preserve all extension assignments");
+                assert!(child.layout.can_host_extension(index));
+            }
+        }
+
+        assert!(
+            saw_base_change,
+            "base crossover should change the base layout for at least one start position"
+        );
+    }
+
+    #[test]
+    fn extension_crossover_changes_only_extension_assignments() {
+        let left = Individual::new(layout_for_tests());
+        let mut right_layout = layout_for_tests();
+        right_layout.clear_extensions();
+        right_layout
+            .assign_extension(9, AzikExtensionToken::Ann)
+            .expect("index 9 should host ann");
+        right_layout
+            .assign_extension(1, AzikExtensionToken::Inn)
+            .expect("index 1 should host inn");
+        right_layout
+            .assign_extension(2, AzikExtensionToken::Unn)
+            .expect("index 2 should host unn");
+        right_layout
+            .assign_extension(3, AzikExtensionToken::Enn)
+            .expect("index 3 should host enn");
+        right_layout
+            .assign_extension(4, AzikExtensionToken::Onn)
+            .expect("index 4 should host onn");
+        right_layout
+            .assign_extension(5, AzikExtensionToken::Ai)
+            .expect("index 5 should host ai");
+        right_layout
+            .assign_extension(6, AzikExtensionToken::Uu)
+            .expect("index 6 should host uu");
+        right_layout
+            .assign_extension(7, AzikExtensionToken::Ei)
+            .expect("index 7 should host ei");
+        right_layout
+            .assign_extension(8, AzikExtensionToken::Ou)
+            .expect("index 8 should host ou");
+        let right = Individual::new(right_layout);
+
+        let before_base = left.layout.output();
+        let before_extensions = left.layout.extension_assignments();
+        let child = left.extension_crossover(&right, &mut fastrand::Rng::with_seed(3));
+
+        assert_eq!(child.layout.output(), before_base);
+        assert_ne!(child.layout.extension_assignments(), before_extensions);
+        for token in AZIK_EXTENSION_TOKENS {
+            let index = child
+                .layout
+                .get_extension_parent_index(token)
+                .expect("extension crossover should keep every token assigned");
+            assert!(child.layout.can_host_extension(index));
+        }
     }
 
     #[test]

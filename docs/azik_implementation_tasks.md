@@ -17,7 +17,7 @@
 | T04 | DONE | 拡張付きキー表現の導入 | `src/keyboard_layout/logical_layout.rs` 周辺 | T01 | 通常文字配置とは別に「子音キー -> 拡張トークン」の割当を保持できる |
 | T05 | DONE | 拡張付きキーの検索・評価 API 実装 | `src/keyboard_layout/logical_layout.rs`, `src/n_gram.rs` | T04 | 専用トークンが親子音キーと同じ index/cost で評価される |
 | T06 | DONE | 遺伝的アルゴリズムに拡張割当遺伝子を追加 | `src/algorithms/genetic.rs` | T04, T05 | 通常キー配置と拡張割当を別に変異できる |
-| T07 | TODO | 交叉・突然変異戦略の分離 | `src/algorithms/genetic.rs` | T06 | 通常キーのみ入替、拡張のみ入替の両操作が存在する |
+| T07 | DONE | 交叉・突然変異戦略の分離 | `src/algorithms/genetic.rs` | T06 | 通常キーのみ入替、拡張のみ入替の両操作が存在する |
 | T08 | DONE | レイアウト出力の可読化 | `src/keyboard_layout/logical_layout.rs`, `src/main.rs` | T04 | `s(ann)` の形式で表示できる |
 | T09 | TODO | 日本語/英語の別評価と重み合成の整理 | `src/n_gram.rs`, `src/main.rs`, `src/algorithms/genetic.rs` | T03, T05 | 日本語と英語を別集合として評価し、重み付け合成できる |
 | T10 | TODO | 単体テスト追加 | `src/n_gram.rs`, `src/keyboard_layout/logical_layout.rs`, `src/algorithms/genetic.rs` | T02-T09 | 前処理、評価、制約、表示をテストで固定できる |
@@ -119,12 +119,13 @@
 
 ### T07 交叉・突然変異戦略の分離
 
-- Status: `TODO`
+- Status: `DONE`
 - 目的: 通常キーだけ、拡張だけを別々に動かせるようにする
 - 作業項目:
 - 通常文字配置向けの既存サイクル交叉を維持または限定利用する
 - 拡張割当専用の突然変異を追加する
 - 必要なら拡張割当専用の単純な交叉や交換操作を追加する
+- Note: 通常キー向けのサイクル交叉と、基底配列を維持した拡張割当専用交叉を別メソッドに分離し、両者の不変条件をテストで固定した
 - 完了条件:
 - 通常キーのみ変化する変異がある
 - 拡張のみ変化する変異がある

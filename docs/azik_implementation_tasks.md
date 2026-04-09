@@ -13,7 +13,7 @@
 | --- | --- | --- | --- | --- | --- |
 | T01 | DONE | 拡張トークン定義と共通ユーティリティ追加 | `src/` 新規共通モジュール, `src/lib.rs` | - | 9種の拡張トークン、表示名、母音/子音判定、内部 `char` 変換が一元管理されている |
 | T02 | DONE | 日本語前処理器の実装 | `src/n_gram.rs` または新規前処理モジュール | T01 | 左から最長一致、子音直後のみ専用トークン化、`kannou -> k + <ann> + o + u` を満たす |
-| T03 | TODO | n-gram DB 生成時に source ごとの前処理を適用 | `src/n_gram.rs` | T02 | 日本語 source のみ前処理して DB 化でき、英語 source には影響しない |
+| T03 | DONE | n-gram DB 生成時に source ごとの前処理を適用 | `src/n_gram.rs` | T02 | 日本語 source のみ前処理して DB 化でき、英語 source には影響しない |
 | T04 | TODO | 拡張付きキー表現の導入 | `src/keyboard_layout/logical_layout.rs` 周辺 | T01 | 通常文字配置とは別に「子音キー -> 拡張トークン」の割当を保持できる |
 | T05 | TODO | 拡張付きキーの検索・評価 API 実装 | `src/keyboard_layout/logical_layout.rs`, `src/n_gram.rs` | T04 | 専用トークンが親子音キーと同じ index/cost で評価される |
 | T06 | TODO | 遺伝的アルゴリズムに拡張割当遺伝子を追加 | `src/algorithms/genetic.rs` | T04, T05 | 通常キー配置と拡張割当を別に変異できる |
@@ -68,7 +68,7 @@
 
 ### T03 n-gram DB 生成時に source ごとの前処理を適用
 
-- Status: `TODO`
+- Status: `DONE`
 - 目的: 日本語だけ前処理し、英語は現状維持で DB 化する
 - 作業項目:
 - `NGramDB::new` で source ごとの前処理フックを追加する

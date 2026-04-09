@@ -2,17 +2,23 @@
 データセットの取得と加工を行うスクリプト
 
 使用方法:
-    python dataset.py init      # 生データの取得と保存
-    python dataset.py           # 加工ファイルの作成
+    poetry run python python/dataset.py init  # 生データの取得と保存
+    poetry run python python/dataset.py       # 加工ファイルの作成
 """
 import argparse
-from datasets import load_dataset
-from huggingface_hub import login
-import pykakasi
-import re
 import json
 import os
 from pathlib import Path
+import re
+
+import pykakasi
+from datasets import load_dataset
+from huggingface_hub import login
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_DATA_DIR = SCRIPT_DIR.parent / "data"
+TOKEN_PATH = SCRIPT_DIR / ".env" / "token.json"
 
 
 qwerty_layout = set([
@@ -68,17 +74,17 @@ def login_huggingface():
     """
     HuggingFaceにログインする
     """
-    if not os.path.exists("./.env/token.json"):
+    if not TOKEN_PATH.exists():
         login()
     else:
-        with open("./.env/token.json", "r", encoding="utf-8") as f:
+        with open(TOKEN_PATH, "r", encoding="utf-8") as f:
             config = json.load(f)
             access_key = config["access_key"]
             os.environ["REQUESTS_CA_BUNDLE"] = config["ca_bundle"]
         login(access_key)
 
 
-def init_command(data_dir="../data"):
+def init_command(data_dir=DEFAULT_DATA_DIR):
     """
     initサブコマンド: 生データの取得と保存
 
@@ -88,7 +94,7 @@ def init_command(data_dir="../data"):
     print("HuggingFaceにログイン中...")
     login_huggingface()
 
-    data_path = Path(data_dir)
+    data_path = Path(data_dir).resolve()
     data_path.mkdir(parents=True, exist_ok=True)
 
     print("英語データセットを取得中...")
@@ -117,14 +123,14 @@ def init_command(data_dir="../data"):
     print("生データの取得が完了しました。")
 
 
-def process_command(data_dir="../data"):
+def process_command(data_dir=DEFAULT_DATA_DIR):
     """
     サブコマンド無し: 加工ファイルの作成
 
     Args:
         data_dir: データが保存されているディレクトリ
     """
-    data_path = Path(data_dir)
+    data_path = Path(data_dir).resolve()
 
     # 英語データの加工
     en_raw_path = data_path / "en_raw.txt"
@@ -132,7 +138,7 @@ def process_command(data_dir="../data"):
 
     if not en_raw_path.exists():
         print(
-            f"エラー: {en_raw_path} が見つかりません。先に 'python dataset.py init' を実行してください。")
+            f"エラー: {en_raw_path} が見つかりません。先に 'poetry run python python/dataset.py init' を実行してください。")
         return
 
     print("英語データを加工中...")
@@ -149,7 +155,7 @@ def process_command(data_dir="../data"):
 
     if not ja_raw_path.exists():
         print(
-            f"エラー: {ja_raw_path} が見つかりません。先に 'python dataset.py init' を実行してください。")
+            f"エラー: {ja_raw_path} が見つかりません。先に 'poetry run python python/dataset.py init' を実行してください。")
         return
 
     print("日本語データを加工中...")
@@ -187,8 +193,8 @@ def main():
     )
     parser.add_argument(
         "--data-dir",
-        default="../data",
-        help="データを保存するディレクトリ（デフォルト: ../data）"
+        default=str(DEFAULT_DATA_DIR),
+        help=f"データを保存するディレクトリ（デフォルト: {DEFAULT_DATA_DIR}）"
     )
 
     args = parser.parse_args()

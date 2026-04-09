@@ -33,3 +33,7 @@ python/.env
 
 # local Codex session artifacts
 .codex
+
+# poetry virtualenv
+.venv/
+.poetry-cache/

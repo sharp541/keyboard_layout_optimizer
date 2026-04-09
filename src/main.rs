@@ -1,7 +1,7 @@
 use std::env;
 use std::path::Path;
 
-use keyboard_layout_optimizer::algorithms::Genetic;
+use keyboard_layout_optimizer::algorithms::{Genetic, OptimizeConfig};
 use keyboard_layout_optimizer::keyboard_layout::Finger as F;
 use keyboard_layout_optimizer::keyboard_layout::*;
 use keyboard_layout_optimizer::n_gram::{NGramDB, NGramSource, SourceKind};
@@ -145,11 +145,13 @@ fn main() -> Result<(), std::io::Error> {
         &physical_layout,
         &custom_layout,
         &n_gram_db,
-        40000,
-        true,
-        3000,
-        ja_weight,
-        en_weight,
+        OptimizeConfig {
+            iterations: 40000,
+            shuffle: true,
+            early_stop_count: 3000,
+            ja_weight,
+            en_weight,
+        },
     );
 
     Ok(())

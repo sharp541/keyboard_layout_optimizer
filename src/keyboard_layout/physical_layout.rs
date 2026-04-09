@@ -148,6 +148,10 @@ impl PhysicalLayout {
         NUM_COLS * NUM_ROWS
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     fn cost_index(&self, k1: usize, k2: usize, k3: usize) -> usize {
         k1 * TOTAL_KEYS * TOTAL_KEYS + k2 * TOTAL_KEYS + k3
     }

@@ -21,7 +21,7 @@
 | T08 | DONE | レイアウト出力の可読化 | `src/keyboard_layout/logical_layout.rs`, `src/main.rs` | T04 | `s(ann)` の形式で表示できる |
 | T09 | DONE | 日本語/英語の別評価と重み合成の整理 | `src/n_gram.rs`, `src/main.rs`, `src/algorithms/genetic.rs` | T03, T05 | 日本語と英語を別集合として評価し、重み付け合成できる |
 | T10 | DONE | 単体テスト追加 | `src/n_gram.rs`, `src/keyboard_layout/logical_layout.rs`, `src/algorithms/genetic.rs` | T02-T09 | 前処理、評価、制約、表示をテストで固定できる |
-| T11 | TODO | 統合確認とリファクタ | `src/main.rs`, 必要箇所 | T10 | `cargo test`, `cargo check`, 必要なら `cargo fmt --all` が通る |
+| T11 | DONE | 統合確認とリファクタ | `src/main.rs`, 必要箇所 | T10 | `cargo test`, `cargo check`, 必要なら `cargo fmt --all` が通る |
 
 ## 推奨実装順
 
@@ -170,13 +170,14 @@
 
 ### T11 統合確認とリファクタ
 
-- Status: `TODO`
+- Status: `DONE`
 - 目的: 仕上げと検証
 - 作業項目:
 - `cargo check`
 - `cargo test`
 - `cargo fmt --all`
 - 必要なら `cargo clippy --all-targets --all-features`
+- Note: `Genetic::optimize` の設定引数を `OptimizeConfig` に整理し、`PhysicalLayout::is_empty` を追加して clippy 警告を解消した
 - 完了条件:
 - ビルドとテストが通る
 - 不要な分岐や重複コードが整理される

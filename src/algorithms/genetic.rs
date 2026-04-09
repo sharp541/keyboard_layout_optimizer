@@ -12,6 +12,14 @@ pub struct Genetic {
     island_size: usize,
 }
 
+pub struct OptimizeConfig {
+    pub iterations: usize,
+    pub shuffle: bool,
+    pub early_stop_count: usize,
+    pub ja_weight: f32,
+    pub en_weight: f32,
+}
+
 impl Genetic {
     pub fn new(population_size: usize, island_size: usize) -> Self {
         if population_size < 3 {
@@ -28,12 +36,15 @@ impl Genetic {
         physical_layout: &PhysicalLayout,
         usable_chars: &[char],
         ngram_db: &NGramDB,
-        iterations: usize,
-        shuffle: bool,
-        early_stop_count: usize,
-        ja_weight: f32,
-        en_weight: f32,
+        config: OptimizeConfig,
     ) {
+        let OptimizeConfig {
+            iterations,
+            shuffle,
+            early_stop_count,
+            ja_weight,
+            en_weight,
+        } = config;
         let (ja_weight, en_weight) = normalize_language_weights(ja_weight, en_weight);
         let mut initial_layout = LogicalLayout::from_usable_chars(usable_chars);
         initial_layout.assign_default_azik_extensions();

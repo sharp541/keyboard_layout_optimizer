@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::japanese_preprocessor::preprocess_japanese_romanization;
 
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct LogicalNGram<const N: usize>([char; N]);
 impl<const N: usize> LogicalNGram<N> {
     pub fn new(n_gram: [char; N]) -> Self {
@@ -121,6 +121,43 @@ pub struct NGramDB {
     conn: Connection,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct SplitTriGrams {
+    pub japanese: HashMap<LogicalNGram<3>, f32>,
+    pub english: HashMap<LogicalNGram<3>, f32>,
+}
+
+impl SplitTriGrams {
+    fn counts_mut(&mut self, source_kind: &str) -> Option<&mut HashMap<LogicalNGram<3>, f32>> {
+        match source_kind {
+            "ja" => Some(&mut self.japanese),
+            "en" => Some(&mut self.english),
+            _ => None,
+        }
+    }
+
+    pub fn weighted(&self, ja_weight: f32, en_weight: f32) -> HashMap<LogicalNGram<3>, f32> {
+        let (ja_weight, en_weight) = normalize_weights(ja_weight, en_weight);
+        let mut merged: HashMap<LogicalNGram<3>, f32> = HashMap::new();
+
+        for (n_gram, prob) in &self.japanese {
+            *merged.entry(*n_gram).or_insert(0.0) += ja_weight * prob;
+        }
+        for (n_gram, prob) in &self.english {
+            *merged.entry(*n_gram).or_insert(0.0) += en_weight * prob;
+        }
+
+        merged
+    }
+
+    fn from_aggregate(tri_grams: HashMap<LogicalNGram<3>, f32>) -> Self {
+        Self {
+            japanese: tri_grams.clone(),
+            english: tri_grams,
+        }
+    }
+}
+
 impl NGramDB {
     fn get_tri_grams_with_filter<F>(
         &self,
@@ -172,13 +209,24 @@ impl NGramDB {
     where
         F: FnMut(char) -> bool,
     {
+        let split = self.get_split_tri_grams_with_filter(&mut is_usable)?;
+        if split.japanese.is_empty() || split.english.is_empty() {
+            return self.get_tri_grams_with_filter(&mut is_usable);
+        }
+
+        Ok(split.weighted(ja_weight, en_weight))
+    }
+
+    fn get_split_tri_grams_with_filter<F>(&self, mut is_usable: F) -> Result<SplitTriGrams>
+    where
+        F: FnMut(char) -> bool,
+    {
         if !table_exists(&self.conn, "n_grams_by_source")
             || !table_exists(&self.conn, "source_stats")
         {
-            return self.get_tri_grams_with_filter(is_usable);
+            let aggregate = self.get_tri_grams_with_filter(&mut is_usable)?;
+            return Ok(SplitTriGrams::from_aggregate(aggregate));
         }
-
-        let (ja_weight, en_weight) = normalize_weights(ja_weight, en_weight);
 
         let mut stmt = self
             .conn
@@ -188,7 +236,7 @@ impl NGramDB {
                  JOIN source_stats s ON s.source_id = n.source_id
                  WHERE n.n = ?1",
             )
-            .expect("Failed to prepare weighted n-gram query");
+            .expect("Failed to prepare split n-gram query");
 
         let rows = stmt
             .query_map(params![3_i32], |row| {
@@ -197,53 +245,47 @@ impl NGramDB {
                 let count: u32 = row.get(2)?;
                 Ok((source_kind, n_gram, count as f32))
             })
-            .expect("Failed to query weighted n-grams");
+            .expect("Failed to query split n-grams");
 
-        let mut ja_counts: HashMap<LogicalNGram<3>, f32> = HashMap::new();
-        let mut en_counts: HashMap<LogicalNGram<3>, f32> = HashMap::new();
+        let mut split = SplitTriGrams::default();
         let mut ja_total = 0.0_f32;
         let mut en_total = 0.0_f32;
 
         for row in rows {
-            let (source_kind, n_gram, count) = row.expect("Failed to read weighted n-gram row");
+            let (source_kind, n_gram, count) = row.expect("Failed to read split n-gram row");
             let n_gram_chars: [char; 3] = n_gram.chars().collect::<Vec<char>>().try_into().unwrap();
             if !n_gram_chars.iter().all(|&c| is_usable(c)) {
                 continue;
             }
-            let key = LogicalNGram::new(n_gram_chars);
-            match source_kind.as_str() {
-                "ja" => {
-                    ja_total += count;
-                    *ja_counts.entry(key).or_insert(0.0) += count;
+
+            if let Some(counts) = split.counts_mut(&source_kind) {
+                let key = LogicalNGram::new(n_gram_chars);
+                match source_kind.as_str() {
+                    "ja" => ja_total += count,
+                    "en" => en_total += count,
+                    _ => {}
                 }
-                "en" => {
-                    en_total += count;
-                    *en_counts.entry(key).or_insert(0.0) += count;
-                }
-                _ => {}
+                *counts.entry(key).or_insert(0.0) += count;
             }
         }
 
-        if ja_total <= f32::EPSILON || en_total <= f32::EPSILON {
-            return self.get_tri_grams_with_filter(is_usable);
+        if ja_total > f32::EPSILON {
+            for count in split.japanese.values_mut() {
+                *count /= ja_total;
+            }
+        } else {
+            split.japanese.clear();
         }
 
-        for count in ja_counts.values_mut() {
-            *count /= ja_total;
-        }
-        for count in en_counts.values_mut() {
-            *count /= en_total;
-        }
-
-        let mut merged: HashMap<LogicalNGram<3>, f32> = HashMap::new();
-        for (n_gram, prob) in ja_counts {
-            *merged.entry(n_gram).or_insert(0.0) += ja_weight * prob;
-        }
-        for (n_gram, prob) in en_counts {
-            *merged.entry(n_gram).or_insert(0.0) += en_weight * prob;
+        if en_total > f32::EPSILON {
+            for count in split.english.values_mut() {
+                *count /= en_total;
+            }
+        } else {
+            split.english.clear();
         }
 
-        Ok(merged)
+        Ok(split)
     }
 
     pub fn requires_rebuild<P: AsRef<Path>>(db_path: P) -> Result<bool> {
@@ -494,6 +536,17 @@ impl NGramDB {
     {
         self.get_tri_grams_weighted_with_filter(can_resolve_char, ja_weight, en_weight)
     }
+
+    pub fn get_split_tri_grams(&self, usable_chars: &HashSet<char>) -> Result<SplitTriGrams> {
+        self.get_split_tri_grams_with_filter(|c| usable_chars.contains(&c))
+    }
+
+    pub fn get_split_tri_grams_for_layout<F>(&self, can_resolve_char: F) -> Result<SplitTriGrams>
+    where
+        F: FnMut(char) -> bool,
+    {
+        self.get_split_tri_grams_with_filter(can_resolve_char)
+    }
 }
 
 #[cfg(test)]
@@ -656,6 +709,9 @@ mod tests {
         )
         .expect("Failed to create NGramDB");
         let usable_chars: HashSet<char> = ['a', 'b'].iter().cloned().collect();
+        let split = n_gram_db
+            .get_split_tri_grams(&usable_chars)
+            .expect("Failed to get split tri-grams");
 
         let ja_only = n_gram_db
             .get_tri_grams_weighted(&usable_chars, 1.0, 0.0)
@@ -667,6 +723,10 @@ mod tests {
         let aaa = LogicalNGram::new(['a', 'a', 'a']);
         let bbb = LogicalNGram::new(['b', 'b', 'b']);
 
+        assert!(split.japanese.get(&aaa).copied().unwrap_or(0.0) > 0.9);
+        assert!(split.japanese.get(&bbb).copied().unwrap_or(0.0) < 0.1);
+        assert!(split.english.get(&bbb).copied().unwrap_or(0.0) > 0.9);
+        assert!(split.english.get(&aaa).copied().unwrap_or(0.0) < 0.1);
         assert!(ja_only.get(&aaa).copied().unwrap_or(0.0) > 0.9);
         assert!(ja_only.get(&bbb).copied().unwrap_or(0.0) < 0.1);
         assert!(en_only.get(&bbb).copied().unwrap_or(0.0) > 0.9);
@@ -927,5 +987,116 @@ mod tests {
             .expect("thread should spawn")
             .join()
             .expect("thread should finish");
+    }
+
+    #[test]
+    fn test_split_evaluation_can_be_weighted_explicitly() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let ja_path = "test_split_eval_ja.txt";
+                let en_path = "test_split_eval_en.txt";
+                let db_path = "test_split_eval.db";
+
+                fs::write(ja_path, "kannkannkann").expect("Failed to write JA test file");
+                fs::write(en_path, "kkk").expect("Failed to write EN test file");
+
+                let n_gram_db = NGramDB::new(
+                    &[
+                        test_source("ja", SourceKind::Japanese, ja_path),
+                        test_source("en", SourceKind::English, en_path),
+                    ],
+                    db_path,
+                )
+                .expect("Failed to create NGramDB");
+
+                let mut layout_with_extension = LogicalLayout::from_usable_chars(&['k']);
+                layout_with_extension
+                    .assign_extension(0, AzikExtensionToken::Ann)
+                    .expect("k should host ann");
+                let layout_without_extension = LogicalLayout::from_usable_chars(&['k']);
+
+                let split = n_gram_db
+                    .get_split_tri_grams_for_layout(|c| {
+                        layout_with_extension.resolve_char_index(c).is_some()
+                    })
+                    .expect("Failed to get split tri-grams");
+
+                let cost_matrix = [1.0; NUM_COLS * NUM_ROWS];
+                let finger_matrix = std::array::from_fn(|_| Finger::I);
+                let mut physical_layout = PhysicalLayout::new(cost_matrix, finger_matrix)
+                    .expect("layout should be valid");
+                physical_layout.calculate_tri_gram_cost();
+
+                let ja_with = layout_with_extension.evaluate(&physical_layout, &split.japanese);
+                let ja_without = layout_without_extension.evaluate(&physical_layout, &HashMap::new());
+                let en_with = layout_with_extension.evaluate(&physical_layout, &split.english);
+                let en_without = layout_without_extension.evaluate(&physical_layout, &split.english);
+
+                assert!(ja_with > 0.0);
+                assert_eq!(ja_without, 0.0);
+                assert_eq!(en_with, en_without);
+
+                let ja_heavy_with = 0.9 * ja_with + 0.1 * en_with;
+                let ja_heavy_without = 0.9 * ja_without + 0.1 * en_without;
+                let en_heavy_with = 0.1 * ja_with + 0.9 * en_with;
+                let en_heavy_without = 0.1 * ja_without + 0.9 * en_without;
+
+                assert!(ja_heavy_with > ja_heavy_without);
+                assert!(en_heavy_with > en_heavy_without);
+                assert!(
+                    (ja_heavy_with - ja_heavy_without) > (en_heavy_with - en_heavy_without),
+                    "raising the Japanese weight should amplify the value of the extension-aware layout"
+                );
+
+                fs::remove_file(ja_path).expect("Failed to remove JA test file");
+                fs::remove_file(en_path).expect("Failed to remove EN test file");
+                fs::remove_file(db_path).expect("Failed to remove test database");
+            })
+            .expect("thread should spawn")
+            .join()
+            .expect("thread should finish");
+    }
+
+    #[test]
+    fn test_split_tri_grams_falls_back_to_aggregate_for_legacy_db() {
+        let db_path = "test_legacy_split_fallback.db";
+        let conn = Connection::open(db_path).expect("Failed to open legacy test database");
+
+        conn.execute(
+            "CREATE TABLE n_grams (
+                id INTEGER PRIMARY KEY,
+                n INTEGER NOT NULL,
+                n_gram TEXT NOT NULL,
+                count INTEGER NOT NULL
+            )",
+            [],
+        )
+        .expect("Failed to create legacy n_grams table");
+        conn.execute(
+            "INSERT INTO n_grams (n, n_gram, count) VALUES (?1, ?2, ?3)",
+            params![3_i32, "abc", 2_i64],
+        )
+        .expect("Failed to insert aggregate tri-gram");
+        conn.execute(
+            "INSERT INTO n_grams (n, n_gram, count) VALUES (?1, ?2, ?3)",
+            params![3_i32, "bcd", 1_i64],
+        )
+        .expect("Failed to insert aggregate tri-gram");
+        drop(conn);
+
+        let n_gram_db = NGramDB::load(db_path).expect("Failed to load legacy DB");
+        let usable_chars: HashSet<char> = ['a', 'b', 'c', 'd'].iter().copied().collect();
+        let split = n_gram_db
+            .get_split_tri_grams(&usable_chars)
+            .expect("Failed to load fallback split tri-grams");
+
+        let abc = LogicalNGram::new(['a', 'b', 'c']);
+        let bcd = LogicalNGram::new(['b', 'c', 'd']);
+        assert_eq!(split.japanese, split.english);
+        assert!((split.japanese.get(&abc).copied().unwrap_or(0.0) - (2.0 / 3.0)).abs() < 1e-6);
+        assert!((split.japanese.get(&bcd).copied().unwrap_or(0.0) - (1.0 / 3.0)).abs() < 1e-6);
+
+        fs::remove_file(db_path).expect("Failed to remove legacy test database");
     }
 }

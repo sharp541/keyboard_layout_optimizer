@@ -34,45 +34,30 @@ impl Genetic {
         ja_weight: f32,
         en_weight: f32,
     ) {
+        let (ja_weight, en_weight) = normalize_language_weights(ja_weight, en_weight);
         let mut initial_layout = LogicalLayout::from_usable_chars(usable_chars);
         initial_layout.assign_default_azik_extensions();
         let mut best_layout = Individual::new(initial_layout.clone());
-        let tri_grams = ngram_db
-            .get_tri_grams_weighted_for_layout(
-                |c| initial_layout.resolve_char_index(c).is_some(),
-                ja_weight,
-                en_weight,
-            )
+        let split_tri_grams = ngram_db
+            .get_split_tri_grams_for_layout(|c| initial_layout.resolve_char_index(c).is_some())
             .expect("Failed to get tri grams");
-        // 使用文字に連番IDを付与（初期レイアウトと同一順）
         let char_to_id: HashMap<char, usize> = usable_chars
             .iter()
             .enumerate()
             .map(|(i, &c)| (c, i))
             .collect();
-        // tri_gramsをID化してVecに前処理
-        let tri_grams_ids: Vec<([LayoutLookup; 3], f32)> = tri_grams
-            .iter()
-            .map(|(ng, s)| {
-                let lookup = |c| {
-                    char_to_id
-                        .get(&c)
-                        .copied()
-                        .map(LayoutLookup::CharId)
-                        .unwrap_or(LayoutLookup::Char(c))
-                };
-                (
-                    [lookup(ng.get(0)), lookup(ng.get(1)), lookup(ng.get(2))],
-                    *s,
-                )
-            })
-            .collect();
-        best_layout.score = best_layout
-            .layout
-            .evaluate_ids(physical_layout, &tri_grams_ids);
+        let ja_tri_grams_ids = tri_grams_to_ids(&split_tri_grams.japanese, &char_to_id);
+        let en_tri_grams_ids = tri_grams_to_ids(&split_tri_grams.english, &char_to_id);
+        best_layout.score = evaluate_weighted_ids(
+            &best_layout.layout,
+            physical_layout,
+            &ja_tri_grams_ids,
+            &en_tri_grams_ids,
+            ja_weight,
+            en_weight,
+        );
 
         let mut rng_fast = fastrand::Rng::new();
-        // initialize
         let mut islands = Vec::with_capacity(self.island_size);
         for _ in 0..self.island_size {
             let mut population = Vec::with_capacity(self.population_size);
@@ -81,7 +66,14 @@ impl Genetic {
                 if shuffle {
                     individual.mutate(&mut rng_fast);
                 }
-                individual.evaluate(physical_layout, &tri_grams);
+                individual.score = evaluate_weighted_ids(
+                    &individual.layout,
+                    physical_layout,
+                    &ja_tri_grams_ids,
+                    &en_tri_grams_ids,
+                    ja_weight,
+                    en_weight,
+                );
                 population.push(individual);
             }
             islands.push(population);
@@ -141,7 +133,14 @@ impl Genetic {
 
                 // Evaluate population
                 population.par_iter_mut().for_each(|i| {
-                    i.score = i.layout.evaluate_ids(physical_layout, &tri_grams_ids);
+                    i.score = evaluate_weighted_ids(
+                        &i.layout,
+                        physical_layout,
+                        &ja_tri_grams_ids,
+                        &en_tri_grams_ids,
+                        ja_weight,
+                        en_weight,
+                    );
                 });
 
                 // 完全ソートを避ける（次反復のエリート抽出は部分選択で行う）
@@ -208,6 +207,53 @@ impl Genetic {
     }
 }
 
+fn normalize_language_weights(ja_weight: f32, en_weight: f32) -> (f32, f32) {
+    let ja = ja_weight.max(0.0);
+    let en = en_weight.max(0.0);
+    let sum = ja + en;
+    if sum <= f32::EPSILON {
+        (0.5, 0.5)
+    } else {
+        (ja / sum, en / sum)
+    }
+}
+
+fn tri_grams_to_ids(
+    tri_grams: &HashMap<LogicalNGram<3>, f32>,
+    char_to_id: &HashMap<char, usize>,
+) -> Vec<([LayoutLookup; 3], f32)> {
+    tri_grams
+        .iter()
+        .map(|(ng, score)| {
+            let lookup = |c| {
+                char_to_id
+                    .get(&c)
+                    .copied()
+                    .map(LayoutLookup::CharId)
+                    .unwrap_or(LayoutLookup::Char(c))
+            };
+            (
+                [lookup(ng.get(0)), lookup(ng.get(1)), lookup(ng.get(2))],
+                *score,
+            )
+        })
+        .collect()
+}
+
+fn evaluate_weighted_ids(
+    layout: &LogicalLayout,
+    physical_layout: &PhysicalLayout,
+    ja_tri_grams_ids: &[([LayoutLookup; 3], f32)],
+    en_tri_grams_ids: &[([LayoutLookup; 3], f32)],
+    ja_weight: f32,
+    en_weight: f32,
+) -> f32 {
+    let (ja_weight, en_weight) = normalize_language_weights(ja_weight, en_weight);
+    let ja_score = layout.evaluate_ids(physical_layout, ja_tri_grams_ids);
+    let en_score = layout.evaluate_ids(physical_layout, en_tri_grams_ids);
+    ja_weight * ja_score + en_weight * en_score
+}
+
 #[derive(Debug, Clone)]
 struct Individual {
     layout: LogicalLayout,
@@ -220,14 +266,6 @@ impl Individual {
             layout.assign_default_azik_extensions();
         }
         Self { layout, score: 0.0 }
-    }
-
-    fn evaluate(
-        &mut self,
-        physical_layout: &PhysicalLayout,
-        tri_grams: &HashMap<LogicalNGram<3>, f32>,
-    ) {
-        self.score = self.layout.evaluate(physical_layout, tri_grams);
     }
 
     fn base_crossover<R: Rng + ?Sized>(&self, other: &Self, rng: &mut R) -> Self {
@@ -812,5 +850,53 @@ mod tests {
                 .expect("repair should reassign every token");
             assert!(individual.layout.can_host_extension(index));
         }
+    }
+
+    #[test]
+    fn weighted_evaluation_normalizes_language_weights() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let physical_layout = weighted_physical_layout();
+                let layout = layout_for_tests();
+                let ja_tri_grams_ids = vec![(
+                    [
+                        LayoutLookup::Char('k'),
+                        LayoutLookup::Char('s'),
+                        LayoutLookup::Char('t'),
+                    ],
+                    1.0,
+                )];
+                let en_tri_grams_ids = vec![(
+                    [
+                        LayoutLookup::Char('n'),
+                        LayoutLookup::Char('h'),
+                        LayoutLookup::Char('m'),
+                    ],
+                    1.0,
+                )];
+
+                let normalized = evaluate_weighted_ids(
+                    &layout,
+                    &physical_layout,
+                    &ja_tri_grams_ids,
+                    &en_tri_grams_ids,
+                    0.5,
+                    0.5,
+                );
+                let unnormalized_same_ratio = evaluate_weighted_ids(
+                    &layout,
+                    &physical_layout,
+                    &ja_tri_grams_ids,
+                    &en_tri_grams_ids,
+                    1.0,
+                    1.0,
+                );
+
+                assert_eq!(normalized, unnormalized_same_ratio);
+            })
+            .expect("thread should spawn")
+            .join()
+            .expect("thread should finish");
     }
 }

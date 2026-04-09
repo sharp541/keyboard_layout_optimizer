@@ -127,15 +127,16 @@ fn main() -> Result<(), std::io::Error> {
     ];
 
     let custom = LogicalLayout::from_usable_chars(custom_layout.as_ref());
-    let tri_grams = n_gram_db
-        .get_tri_grams_weighted_for_layout(
-            |c| custom.resolve_char_index(c).is_some(),
-            ja_weight,
-            en_weight,
-        )
-        .expect("Failed to get weighted tri grams");
-    let score = custom.evaluate(&physical_layout, &tri_grams);
-    println!("custom score: {}", score);
+    let split_tri_grams = n_gram_db
+        .get_split_tri_grams_for_layout(|c| custom.resolve_char_index(c).is_some())
+        .expect("Failed to get split tri grams");
+    let ja_score = custom.evaluate(&physical_layout, &split_tri_grams.japanese);
+    let en_score = custom.evaluate(&physical_layout, &split_tri_grams.english);
+    let score = ja_weight * ja_score + en_weight * en_score;
+    println!(
+        "custom score: {} (ja: {}, en: {})",
+        score, ja_score, en_score
+    );
     custom.print();
 
     let algorithm = Genetic::new(32, 16);

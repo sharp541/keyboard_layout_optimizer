@@ -139,16 +139,16 @@ fn main() -> Result<(), std::io::Error> {
     );
     custom.print();
 
-    let algorithm = Genetic::new(32, 16);
+    let algorithm = Genetic::new(48, 24);
 
     algorithm.optimize(
         &physical_layout,
         &custom_layout,
         &n_gram_db,
         OptimizeConfig {
-            iterations: 40000,
+            iterations: 60000,
             shuffle: true,
-            early_stop_count: 3000,
+            early_stop_count: 8000,
             ja_weight,
             en_weight,
         },

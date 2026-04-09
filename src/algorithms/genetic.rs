@@ -81,7 +81,8 @@ impl Genetic {
             for _ in 0..self.population_size {
                 let mut individual = Individual::new(initial_layout.clone());
                 if shuffle {
-                    individual.mutate(&mut rng_fast);
+                    let initial_mutation_steps = 3 + rng_fast.usize(0..4);
+                    individual.mutate_steps(&mut rng_fast, initial_mutation_steps);
                 }
                 individual.score = evaluate_weighted_ids(
                     &individual.layout,
@@ -99,10 +100,12 @@ impl Genetic {
         let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
         let mut count = 0;
         for i in 0..iterations {
+            let stagnation = count;
             // 並列化：島ごとに独立処理
             islands.par_iter_mut().for_each(|population| {
                 // スレッドローカルの軽量RNG
                 let mut local_rng = fastrand::Rng::new();
+                let mutation_steps = mutation_steps_for_stagnation(stagnation);
                 // エリート抽出：全体ソートを避け、最小スコアの上位elite_numのみ選ぶ
                 let mut new_population: Vec<Individual> = Vec::with_capacity(self.population_size);
                 for _ in 0..elite_num {
@@ -141,7 +144,7 @@ impl Genetic {
                     } else {
                         parent1.extension_crossover(parent2, &mut local_rng)
                     };
-                    child.mutate(&mut local_rng);
+                    child.mutate_steps(&mut local_rng, mutation_steps);
                     children.push(child);
                 }
                 new_population.append(&mut children);
@@ -162,6 +165,20 @@ impl Genetic {
 
                 // 完全ソートを避ける（次反復のエリート抽出は部分選択で行う）
             });
+
+            if stagnation > 0 && stagnation % 500 == 0 {
+                for population in &mut islands {
+                    diversify_population(
+                        population,
+                        elite_num,
+                        physical_layout,
+                        &ja_tri_grams_ids,
+                        &en_tri_grams_ids,
+                        ja_weight,
+                        en_weight,
+                    );
+                }
+            }
 
             // migrate best individuals
             if i % 10 == 0 {
@@ -192,14 +209,23 @@ impl Genetic {
             }
 
             // update best layout
-            let current_best_layout = islands.iter().min_by(|a, b| {
-                a[0].score
-                    .partial_cmp(&b[0].score)
-                    .expect("Failed to compare scores")
-            });
+            let current_best_layout = islands
+                .iter()
+                .filter_map(|population| {
+                    population.iter().min_by(|a, b| {
+                        a.score
+                            .partial_cmp(&b.score)
+                            .expect("Failed to compare scores")
+                    })
+                })
+                .min_by(|a, b| {
+                    a.score
+                        .partial_cmp(&b.score)
+                        .expect("Failed to compare scores")
+                });
             if let Some(current_best_layout) = current_best_layout {
-                if current_best_layout[0].score < best_layout.score {
-                    best_layout = current_best_layout[0].clone();
+                if current_best_layout.score < best_layout.score {
+                    best_layout = current_best_layout.clone();
                     count = 0;
                 }
             }
@@ -473,6 +499,61 @@ impl Individual {
             1 | 2 => self.base_mutation(rng),
             _ => self.extension_mutation(rng),
         }
+    }
+
+    fn mutate_steps(&mut self, rng: &mut fastrand::Rng, steps: usize) {
+        for _ in 0..steps.max(1) {
+            self.mutate(rng);
+        }
+    }
+}
+
+fn mutation_steps_for_stagnation(stagnation: usize) -> usize {
+    match stagnation {
+        0..=499 => 1,
+        500..=1499 => 2,
+        1500..=2999 => 3,
+        _ => 4,
+    }
+}
+
+fn diversify_population(
+    population: &mut [Individual],
+    elite_num: usize,
+    physical_layout: &PhysicalLayout,
+    ja_tri_grams_ids: &[([LayoutLookup; 3], f32)],
+    en_tri_grams_ids: &[([LayoutLookup; 3], f32)],
+    ja_weight: f32,
+    en_weight: f32,
+) {
+    if population.len() <= elite_num {
+        return;
+    }
+
+    population.sort_by(|a, b| {
+        a.score
+            .partial_cmp(&b.score)
+            .expect("Failed to compare scores")
+    });
+
+    let mut rng = fastrand::Rng::new();
+    let elite_templates = population[..elite_num].to_vec();
+    let replace_count = ((population.len() - elite_num) / 4).max(1);
+
+    for slot in population.iter_mut().rev().take(replace_count) {
+        let template = &elite_templates[rng.usize(0..elite_templates.len())];
+        let mut diversified = template.clone();
+        let diversification_steps = 6 + rng.usize(0..6);
+        diversified.mutate_steps(&mut rng, diversification_steps);
+        diversified.score = evaluate_weighted_ids(
+            &diversified.layout,
+            physical_layout,
+            ja_tri_grams_ids,
+            en_tri_grams_ids,
+            ja_weight,
+            en_weight,
+        );
+        *slot = diversified;
     }
 }
 

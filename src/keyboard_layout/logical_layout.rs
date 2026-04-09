@@ -300,30 +300,60 @@ impl LogicalLayout {
             .is_some_and(|c| !self.dummy_chars.contains(&c) && is_consonant(c))
     }
 
+    pub fn key_label(&self, index: usize) -> Option<String> {
+        let ch = *self.layout.get(index)?;
+        if self.dummy_chars.contains(&ch) {
+            return None;
+        }
+
+        let mut label = ch.to_string();
+        if let Some(token) = self.extension_map.get(&index) {
+            label.push('(');
+            label.push_str(token.label());
+            label.push(')');
+        }
+        Some(label)
+    }
+
+    pub fn display_lines(&self) -> Vec<String> {
+        let separator = std::iter::repeat_n("--", NUM_COLS + 1).collect::<String>();
+        let mut lines = Vec::with_capacity(NUM_LAYERS * (NUM_ROWS + 2));
+
+        for layer in 0..NUM_LAYERS {
+            let mut row_labels = Vec::with_capacity(NUM_ROWS);
+            let mut width = 1usize;
+            for row in 0..NUM_ROWS {
+                let labels = (0..NUM_COLS)
+                    .map(|col| {
+                        let idx = layer * (NUM_COLS * NUM_ROWS) + row * NUM_COLS + col;
+                        self.key_label(idx).unwrap_or_default()
+                    })
+                    .collect::<Vec<_>>();
+                width = width.max(labels.iter().map(String::len).max().unwrap_or(0));
+                row_labels.push(labels);
+            }
+
+            lines.push(format!("Layer {}:", layer));
+            for labels in row_labels {
+                let mut row_line = String::new();
+                for (col, label) in labels.into_iter().enumerate() {
+                    if col == NUM_COLS / 2 {
+                        row_line.push_str("| ");
+                    }
+                    row_line.push_str(&format!("{label:<width$} ", width = width));
+                }
+                lines.push(row_line.trim_end().to_string());
+            }
+            lines.push(separator.clone());
+        }
+
+        lines
+    }
+
     pub fn print(&self) {
         println!();
-        for layer in 0..NUM_LAYERS {
-            println!("Layer {}:", layer);
-            for row in 0..NUM_ROWS {
-                for col in 0..NUM_COLS {
-                    let idx = layer * (NUM_COLS * NUM_ROWS) + row * NUM_COLS + col;
-                    let ch = self.layout[idx];
-                    if col == NUM_COLS / 2 {
-                        print!("| ");
-                    }
-                    if self.dummy_chars.contains(&ch) {
-                        // Do not display dummy characters
-                        print!("  ");
-                    } else {
-                        print!("{} ", ch);
-                    }
-                }
-                println!();
-            }
-            std::iter::repeat_n("--", NUM_COLS + 1).for_each(|c| {
-                print!("{}", c);
-            });
-            println!();
+        for line in self.display_lines() {
+            println!("{line}");
         }
     }
 
@@ -637,5 +667,32 @@ mod tests {
             assert!(layout.can_host_extension(index));
             assert_eq!(layout.resolve_char_index(token.as_char()), Some(index));
         }
+    }
+
+    #[test]
+    fn key_label_formats_extension_as_parenthesized_suffix() {
+        let mut layout = LogicalLayout::from_usable_chars(&['s', 'a', 'k']);
+        layout
+            .assign_extension(0, AzikExtensionToken::Ann)
+            .expect("consonant key should accept extension");
+
+        assert_eq!(layout.key_label(0).as_deref(), Some("s(ann)"));
+        assert_eq!(layout.key_label(1).as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn display_lines_keep_dummy_keys_blank_and_show_extension_labels() {
+        let mut layout = LogicalLayout::from_usable_chars(&['s', 'a', 'k']);
+        layout
+            .assign_extension(0, AzikExtensionToken::Ann)
+            .expect("consonant key should accept extension");
+
+        let lines = layout.display_lines();
+
+        assert_eq!(lines[0], "Layer 0:");
+        assert!(lines[1].contains("s(ann)"));
+        assert!(lines[1].contains("a"));
+        assert!(lines[1].contains('|'));
+        assert!(!lines[1].contains('\u{e000}'));
     }
 }

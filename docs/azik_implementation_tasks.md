@@ -18,7 +18,7 @@
 | T05 | DONE | 拡張付きキーの検索・評価 API 実装 | `src/keyboard_layout/logical_layout.rs`, `src/n_gram.rs` | T04 | 専用トークンが親子音キーと同じ index/cost で評価される |
 | T06 | TODO | 遺伝的アルゴリズムに拡張割当遺伝子を追加 | `src/algorithms/genetic.rs` | T04, T05 | 通常キー配置と拡張割当を別に変異できる |
 | T07 | TODO | 交叉・突然変異戦略の分離 | `src/algorithms/genetic.rs` | T06 | 通常キーのみ入替、拡張のみ入替の両操作が存在する |
-| T08 | TODO | レイアウト出力の可読化 | `src/keyboard_layout/logical_layout.rs`, `src/main.rs` | T04 | `s(ann)` の形式で表示できる |
+| T08 | DONE | レイアウト出力の可読化 | `src/keyboard_layout/logical_layout.rs`, `src/main.rs` | T04 | `s(ann)` の形式で表示できる |
 | T09 | TODO | 日本語/英語の別評価と重み合成の整理 | `src/n_gram.rs`, `src/main.rs`, `src/algorithms/genetic.rs` | T03, T05 | 日本語と英語を別集合として評価し、重み付け合成できる |
 | T10 | TODO | 単体テスト追加 | `src/n_gram.rs`, `src/keyboard_layout/logical_layout.rs`, `src/algorithms/genetic.rs` | T02-T09 | 前処理、評価、制約、表示をテストで固定できる |
 | T11 | TODO | 統合確認とリファクタ | `src/main.rs`, 必要箇所 | T10 | `cargo test`, `cargo check`, 必要なら `cargo fmt --all` が通る |
@@ -132,7 +132,7 @@
 
 ### T08 レイアウト出力の可読化
 
-- Status: `TODO`
+- Status: `DONE`
 - 目的: 最適化結果を人が確認できる形で出力する
 - 作業項目:
 - 拡張なしキーの表示は現状維持とする

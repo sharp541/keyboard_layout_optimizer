@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
+use crate::japanese_preprocessor::preprocess_japanese_romanization;
+
 #[derive(Debug, Eq, Hash, PartialEq)]
 pub struct LogicalNGram<const N: usize>([char; N]);
 impl<const N: usize> LogicalNGram<N> {
@@ -19,10 +21,45 @@ impl<const N: usize> LogicalNGram<N> {
     }
 }
 
-fn generate_n_grams(text: &str, n: usize) -> Vec<&str> {
-    text.as_bytes()
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceKind {
+    Japanese,
+    English,
+    Other,
+}
+
+impl SourceKind {
+    fn as_db_value(self) -> &'static str {
+        match self {
+            SourceKind::Japanese => "ja",
+            SourceKind::English => "en",
+            SourceKind::Other => "other",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NGramSource<P> {
+    pub name: String,
+    pub kind: SourceKind,
+    pub path: P,
+}
+
+impl<P> NGramSource<P> {
+    pub fn new(name: impl Into<String>, kind: SourceKind, path: P) -> Self {
+        Self {
+            name: name.into(),
+            kind,
+            path,
+        }
+    }
+}
+
+fn generate_n_grams(text: &str, n: usize) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    chars
         .windows(n)
-        .map(|w| std::str::from_utf8(w).unwrap())
+        .map(|window| window.iter().collect())
         .collect()
 }
 
@@ -56,11 +93,27 @@ fn table_exists(conn: &Connection, table_name: &str) -> bool {
     .is_some()
 }
 
-fn source_name_from_index(index: usize) -> String {
-    match index {
-        0 => "ja".to_string(),
-        1 => "en".to_string(),
-        _ => format!("source_{index}"),
+fn table_has_column(conn: &Connection, table_name: &str, column_name: &str) -> bool {
+    let pragma = format!("PRAGMA table_info({table_name})");
+    let mut stmt = conn
+        .prepare(&pragma)
+        .expect("Failed to inspect table schema");
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .expect("Failed to query table schema");
+
+    let mut column_names = Vec::new();
+    for column in columns {
+        column_names.push(column.expect("Failed to read column name"));
+    }
+
+    column_names.into_iter().any(|column| column == column_name)
+}
+
+fn preprocess_source_text(source_kind: SourceKind, text: &str) -> String {
+    match source_kind {
+        SourceKind::Japanese => preprocess_japanese_romanization(text),
+        _ => text.to_string(),
     }
 }
 
@@ -69,8 +122,33 @@ pub struct NGramDB {
 }
 
 impl NGramDB {
-    pub fn new<P: AsRef<Path>>(source_paths: &[P], db_path: P) -> Result<Self> {
+    pub fn requires_rebuild<P: AsRef<Path>>(db_path: P) -> Result<bool> {
+        if !db_path.as_ref().exists() {
+            return Ok(true);
+        }
+
+        let conn = Connection::open(db_path)?;
+        Ok(!Self::has_compatible_schema(&conn))
+    }
+
+    pub fn new<P: AsRef<Path>, Q: AsRef<Path>>(
+        sources: &[NGramSource<P>],
+        db_path: Q,
+    ) -> Result<Self> {
         let mut conn = Connection::open(db_path).expect("Failed to open database");
+
+        if table_exists(&conn, "source_stats")
+            && !table_has_column(&conn, "source_stats", "source_kind")
+        {
+            conn.execute("DROP TABLE source_stats", [])
+                .expect("Failed to drop legacy source_stats table");
+        }
+        if table_exists(&conn, "n_grams_by_source")
+            && !table_has_column(&conn, "n_grams_by_source", "source_id")
+        {
+            conn.execute("DROP TABLE n_grams_by_source", [])
+                .expect("Failed to drop legacy n_grams_by_source table");
+        }
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS n_grams (
@@ -87,6 +165,7 @@ impl NGramDB {
             "CREATE TABLE IF NOT EXISTS source_stats (
                       source_id INTEGER PRIMARY KEY,
                       source_name TEXT NOT NULL UNIQUE,
+                      source_kind TEXT NOT NULL,
                       char_count INTEGER NOT NULL,
                       tri_gram_count INTEGER NOT NULL,
                       char_ratio REAL NOT NULL
@@ -112,12 +191,13 @@ impl NGramDB {
 
         let mut n_gram_counts: HashMap<(u8, String), usize> = HashMap::new();
         let mut source_n_gram_counts: Vec<HashMap<(u8, String), usize>> =
-            vec![HashMap::new(); source_paths.len()];
-        let mut source_char_counts: Vec<usize> = vec![0; source_paths.len()];
-        let mut source_tri_gram_counts: Vec<usize> = vec![0; source_paths.len()];
+            vec![HashMap::new(); sources.len()];
+        let mut source_char_counts: Vec<usize> = vec![0; sources.len()];
+        let mut source_tri_gram_counts: Vec<usize> = vec![0; sources.len()];
 
-        for (source_id, source_path) in source_paths.iter().enumerate() {
-            let text = fs::read_to_string(source_path).expect("Failed to read file");
+        for (source_id, source) in sources.iter().enumerate() {
+            let raw_text = fs::read_to_string(source.path.as_ref()).expect("Failed to read file");
+            let text = preprocess_source_text(source.kind, &raw_text);
             source_char_counts[source_id] = text.chars().count();
 
             for &n in &[1_usize, 3_usize] {
@@ -149,19 +229,19 @@ impl NGramDB {
         }
 
         let total_char_count: usize = source_char_counts.iter().sum();
-        for source_id in 0..source_paths.len() {
+        for (source_id, source) in sources.iter().enumerate() {
             let char_ratio = if total_char_count == 0 {
                 0.0
             } else {
                 source_char_counts[source_id] as f32 / total_char_count as f32
             };
-            let source_name = source_name_from_index(source_id);
             tx.execute(
-                "INSERT INTO source_stats (source_id, source_name, char_count, tri_gram_count, char_ratio)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO source_stats (source_id, source_name, source_kind, char_count, tri_gram_count, char_ratio)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     source_id as i64,
-                    source_name,
+                    &source.name,
+                    source.kind.as_db_value(),
                     source_char_counts[source_id] as i64,
                     source_tri_gram_counts[source_id] as i64,
                     char_ratio
@@ -189,28 +269,30 @@ impl NGramDB {
         Ok(NGramDB { conn })
     }
 
+    fn has_compatible_schema(conn: &Connection) -> bool {
+        table_exists(conn, "n_grams")
+            && table_exists(conn, "source_stats")
+            && table_exists(conn, "n_grams_by_source")
+            && table_has_column(conn, "source_stats", "source_kind")
+            && table_has_column(conn, "n_grams_by_source", "source_id")
+    }
+
     pub fn get_source_size_ratios(&self) -> Result<Option<(f32, f32)>> {
         if !table_exists(&self.conn, "source_stats") {
             return Ok(None);
         }
 
-        let ja_ratio = self
-            .conn
-            .query_row(
-                "SELECT char_ratio FROM source_stats WHERE source_name = 'ja' LIMIT 1",
-                [],
-                |row| row.get::<_, f32>(0),
-            )
-            .optional()?;
+        let ja_ratio = self.conn.query_row(
+            "SELECT SUM(char_ratio) FROM source_stats WHERE source_kind = 'ja'",
+            [],
+            |row| row.get::<_, Option<f32>>(0),
+        )?;
 
-        let en_ratio = self
-            .conn
-            .query_row(
-                "SELECT char_ratio FROM source_stats WHERE source_name = 'en' LIMIT 1",
-                [],
-                |row| row.get::<_, f32>(0),
-            )
-            .optional()?;
+        let en_ratio = self.conn.query_row(
+            "SELECT SUM(char_ratio) FROM source_stats WHERE source_kind = 'en'",
+            [],
+            |row| row.get::<_, Option<f32>>(0),
+        )?;
 
         Ok(match (ja_ratio, en_ratio) {
             (Some(ja), Some(en)) => Some((ja, en)),
@@ -306,7 +388,7 @@ impl NGramDB {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT s.source_name, n.n_gram, n.count
+                "SELECT s.source_kind, n.n_gram, n.count
                  FROM n_grams_by_source n
                  JOIN source_stats s ON s.source_id = n.source_id
                  WHERE n.n = ?1",
@@ -315,10 +397,10 @@ impl NGramDB {
 
         let rows = stmt
             .query_map(params![3_i32], |row| {
-                let source_name: String = row.get(0)?;
+                let source_kind: String = row.get(0)?;
                 let n_gram: String = row.get(1)?;
                 let count: u32 = row.get(2)?;
-                Ok((source_name, n_gram, count as f32))
+                Ok((source_kind, n_gram, count as f32))
             })
             .expect("Failed to query weighted n-grams");
 
@@ -328,13 +410,13 @@ impl NGramDB {
         let mut en_total = 0.0_f32;
 
         for row in rows {
-            let (source_name, n_gram, count) = row.expect("Failed to read weighted n-gram row");
+            let (source_kind, n_gram, count) = row.expect("Failed to read weighted n-gram row");
             let n_gram_chars: [char; 3] = n_gram.chars().collect::<Vec<char>>().try_into().unwrap();
             if !n_gram_chars.iter().all(|&c| usable_chars.contains(&c)) {
                 continue;
             }
             let key = LogicalNGram::new(n_gram_chars);
-            match source_name.as_str() {
+            match source_kind.as_str() {
                 "ja" => {
                     ja_total += count;
                     *ja_counts.entry(key).or_insert(0.0) += count;
@@ -373,7 +455,42 @@ impl NGramDB {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::azik_extension::AzikExtensionToken;
     use std::fs;
+
+    fn test_source<'a>(name: &'a str, kind: SourceKind, path: &'a str) -> NGramSource<&'a str> {
+        NGramSource::new(name, kind, path)
+    }
+
+    fn count_ngrams_by_source(n_gram_db: &NGramDB, source_name: &str, n: u8, n_gram: &str) -> i64 {
+        n_gram_db
+            .conn
+            .query_row(
+                "SELECT count FROM n_grams_by_source
+                 WHERE source_id = (
+                    SELECT source_id FROM source_stats WHERE source_name = ?1
+                 )
+                 AND n = ?2 AND n_gram = ?3",
+                params![source_name, n, n_gram],
+                |row| row.get(0),
+            )
+            .expect("Failed to get n-gram count by source name")
+    }
+
+    fn count_matching_rows_by_source(n_gram_db: &NGramDB, source_name: &str, n_gram: &str) -> i64 {
+        n_gram_db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM n_grams_by_source
+                 WHERE source_id = (
+                    SELECT source_id FROM source_stats WHERE source_name = ?1
+                 )
+                 AND n_gram = ?2",
+                params![source_name, n_gram],
+                |row| row.get(0),
+            )
+            .expect("Failed to count n-gram rows by source name")
+    }
 
     #[test]
     fn test_generate_n_grams() {
@@ -399,7 +516,11 @@ mod tests {
         fs::write(file_path, "abcabc").expect("Failed to write test file");
 
         // NGramDBを新規作成
-        let n_gram_db = NGramDB::new(&[file_path], db_path).expect("Failed to create NGramDB");
+        let n_gram_db = NGramDB::new(
+            &[test_source("test_text", SourceKind::Other, file_path)],
+            db_path,
+        )
+        .expect("Failed to create NGramDB");
 
         // 1-gramを取得して確認
         let mono_grams = n_gram_db.get_mono_grams().expect("Failed to get 1-grams");
@@ -451,8 +572,14 @@ mod tests {
         fs::write(ja_path, "aa").expect("Failed to write JA test file");
         fs::write(en_path, "bbbb").expect("Failed to write EN test file");
 
-        let n_gram_db =
-            NGramDB::new(&[ja_path, en_path], db_path).expect("Failed to create NGramDB");
+        let n_gram_db = NGramDB::new(
+            &[
+                test_source("ja", SourceKind::Japanese, ja_path),
+                test_source("en", SourceKind::English, en_path),
+            ],
+            db_path,
+        )
+        .expect("Failed to create NGramDB");
         let ratios = n_gram_db
             .get_source_size_ratios()
             .expect("Failed to get source ratios")
@@ -475,8 +602,14 @@ mod tests {
         fs::write(ja_path, "aaaaaa").expect("Failed to write JA test file");
         fs::write(en_path, "bbbbbb").expect("Failed to write EN test file");
 
-        let n_gram_db =
-            NGramDB::new(&[ja_path, en_path], db_path).expect("Failed to create NGramDB");
+        let n_gram_db = NGramDB::new(
+            &[
+                test_source("ja", SourceKind::Japanese, ja_path),
+                test_source("en", SourceKind::English, en_path),
+            ],
+            db_path,
+        )
+        .expect("Failed to create NGramDB");
         let usable_chars: HashSet<char> = ['a', 'b'].iter().cloned().collect();
 
         let ja_only = n_gram_db
@@ -497,5 +630,193 @@ mod tests {
         fs::remove_file(ja_path).expect("Failed to remove JA test file");
         fs::remove_file(en_path).expect("Failed to remove EN test file");
         fs::remove_file(db_path).expect("Failed to remove test database");
+    }
+
+    #[test]
+    fn test_source_specific_preprocessing_is_applied_only_to_japanese() {
+        let ja_path = "test_preprocess_ja.txt";
+        let en_path = "test_preprocess_en.txt";
+        let db_path = "test_preprocess_ja_en.db";
+
+        fs::write(ja_path, "kannzi").expect("Failed to write JA test file");
+        fs::write(en_path, "kannzi").expect("Failed to write EN test file");
+
+        let n_gram_db = NGramDB::new(
+            &[
+                test_source("japanese_corpus", SourceKind::Japanese, ja_path),
+                test_source("english_corpus", SourceKind::English, en_path),
+            ],
+            db_path,
+        )
+        .expect("Failed to create NGramDB");
+
+        let ja_mono_count = count_ngrams_by_source(
+            &n_gram_db,
+            "japanese_corpus",
+            1,
+            &AzikExtensionToken::Ann.as_char().to_string(),
+        );
+        assert_eq!(ja_mono_count, 1);
+
+        let ja_annzi_count = count_ngrams_by_source(
+            &n_gram_db,
+            "japanese_corpus",
+            3,
+            &format!("{}zi", AzikExtensionToken::Ann.as_char()),
+        );
+        assert_eq!(ja_annzi_count, 1);
+
+        let en_extension_rows = count_matching_rows_by_source(
+            &n_gram_db,
+            "english_corpus",
+            &AzikExtensionToken::Ann.as_char().to_string(),
+        );
+        assert_eq!(en_extension_rows, 0);
+
+        let en_annzi_rows = count_matching_rows_by_source(
+            &n_gram_db,
+            "english_corpus",
+            &format!("{}zi", AzikExtensionToken::Ann.as_char()),
+        );
+        assert_eq!(en_annzi_rows, 0);
+
+        let en_kan_count = count_ngrams_by_source(&n_gram_db, "english_corpus", 3, "kan");
+        assert_eq!(en_kan_count, 1);
+
+        fs::remove_file(ja_path).expect("Failed to remove JA test file");
+        fs::remove_file(en_path).expect("Failed to remove EN test file");
+        fs::remove_file(db_path).expect("Failed to remove test database");
+    }
+
+    #[test]
+    fn test_source_specific_preprocessing_uses_source_identity_not_input_order() {
+        let en_path = "test_preprocess_order_en.txt";
+        let ja_path = "test_preprocess_order_ja.txt";
+        let db_path = "test_preprocess_order_ja_en.db";
+
+        fs::write(ja_path, "kannzi").expect("Failed to write JA test file");
+        fs::write(en_path, "kannzi").expect("Failed to write EN test file");
+
+        let n_gram_db = NGramDB::new(
+            &[
+                test_source("english_corpus", SourceKind::English, en_path),
+                test_source("japanese_corpus", SourceKind::Japanese, ja_path),
+            ],
+            db_path,
+        )
+        .expect("Failed to create NGramDB");
+
+        let ja_mono_count = count_ngrams_by_source(
+            &n_gram_db,
+            "japanese_corpus",
+            1,
+            &AzikExtensionToken::Ann.as_char().to_string(),
+        );
+        assert_eq!(ja_mono_count, 1);
+
+        let ja_annzi_count = count_ngrams_by_source(
+            &n_gram_db,
+            "japanese_corpus",
+            3,
+            &format!("{}zi", AzikExtensionToken::Ann.as_char()),
+        );
+        assert_eq!(ja_annzi_count, 1);
+
+        let en_extension_rows = count_matching_rows_by_source(
+            &n_gram_db,
+            "english_corpus",
+            &AzikExtensionToken::Ann.as_char().to_string(),
+        );
+        assert_eq!(en_extension_rows, 0);
+
+        let en_kan_count = count_ngrams_by_source(&n_gram_db, "english_corpus", 3, "kan");
+        assert_eq!(en_kan_count, 1);
+
+        fs::remove_file(ja_path).expect("Failed to remove JA test file");
+        fs::remove_file(en_path).expect("Failed to remove EN test file");
+        fs::remove_file(db_path).expect("Failed to remove test database");
+    }
+
+    #[test]
+    fn test_multiple_sources_can_share_same_kind() {
+        let ja_news_path = "test_multi_ja_news.txt";
+        let ja_books_path = "test_multi_ja_books.txt";
+        let en_path = "test_multi_en.txt";
+        let db_path = "test_multi_kind.db";
+
+        fs::write(ja_news_path, "kannzi").expect("Failed to write JA news file");
+        fs::write(ja_books_path, "kannzi").expect("Failed to write JA books file");
+        fs::write(en_path, "abc").expect("Failed to write EN test file");
+
+        let n_gram_db = NGramDB::new(
+            &[
+                test_source("ja_news", SourceKind::Japanese, ja_news_path),
+                test_source("ja_books", SourceKind::Japanese, ja_books_path),
+                test_source("en_reference", SourceKind::English, en_path),
+            ],
+            db_path,
+        )
+        .expect("Failed to create NGramDB");
+
+        let ann = AzikExtensionToken::Ann.as_char().to_string();
+        assert_eq!(count_ngrams_by_source(&n_gram_db, "ja_news", 1, &ann), 1);
+        assert_eq!(count_ngrams_by_source(&n_gram_db, "ja_books", 1, &ann), 1);
+
+        let ratios = n_gram_db
+            .get_source_size_ratios()
+            .expect("Failed to get source ratios")
+            .expect("Expected JA/EN ratios to exist");
+        assert!(ratios.0 > ratios.1);
+
+        fs::remove_file(ja_news_path).expect("Failed to remove JA news file");
+        fs::remove_file(ja_books_path).expect("Failed to remove JA books file");
+        fs::remove_file(en_path).expect("Failed to remove EN test file");
+        fs::remove_file(db_path).expect("Failed to remove test database");
+    }
+
+    #[test]
+    fn test_requires_rebuild_detects_legacy_source_stats_schema() {
+        let db_path = "test_legacy_schema.db";
+        let conn = Connection::open(db_path).expect("Failed to open legacy test database");
+
+        conn.execute(
+            "CREATE TABLE source_stats (
+                source_id INTEGER PRIMARY KEY,
+                source_name TEXT NOT NULL UNIQUE,
+                char_count INTEGER NOT NULL,
+                tri_gram_count INTEGER NOT NULL,
+                char_ratio REAL NOT NULL
+            )",
+            [],
+        )
+        .expect("Failed to create legacy source_stats table");
+        conn.execute(
+            "CREATE TABLE n_grams (
+                id INTEGER PRIMARY KEY,
+                n INTEGER NOT NULL,
+                n_gram TEXT NOT NULL,
+                count INTEGER NOT NULL
+            )",
+            [],
+        )
+        .expect("Failed to create n_grams table");
+        conn.execute(
+            "CREATE TABLE n_grams_by_source (
+                id INTEGER PRIMARY KEY,
+                n INTEGER NOT NULL,
+                n_gram TEXT NOT NULL,
+                count INTEGER NOT NULL
+            )",
+            [],
+        )
+        .expect("Failed to create legacy n_grams_by_source table");
+        drop(conn);
+
+        assert!(
+            NGramDB::requires_rebuild(db_path).expect("Failed to inspect DB schema"),
+            "legacy schema should trigger rebuild"
+        );
+
+        fs::remove_file(db_path).expect("Failed to remove legacy test database");
     }
 }

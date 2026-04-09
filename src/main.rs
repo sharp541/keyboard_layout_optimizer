@@ -5,7 +5,7 @@ use std::path::Path;
 use keyboard_layout_optimizer::algorithms::Genetic;
 use keyboard_layout_optimizer::keyboard_layout::Finger as F;
 use keyboard_layout_optimizer::keyboard_layout::*;
-use keyboard_layout_optimizer::n_gram::NGramDB;
+use keyboard_layout_optimizer::n_gram::{NGramDB, NGramSource, SourceKind};
 
 fn parse_weights_from_args() -> Result<(f32, f32), String> {
     let mut ja_weight = 0.5_f32;
@@ -54,10 +54,14 @@ fn main() -> Result<(), std::io::Error> {
     let (ja_weight, en_weight) = parse_weights_from_args()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
 
-    let source_paths = vec![Path::new("data/ja.txt"), Path::new("data/en.txt")];
+    let source_paths = [Path::new("data/ja.txt"), Path::new("data/en.txt")];
+    let sources = vec![
+        NGramSource::new("ja", SourceKind::Japanese, source_paths[0]),
+        NGramSource::new("en", SourceKind::English, source_paths[1]),
+    ];
     let db_path = Path::new("data/ja_en.db");
-    if !db_path.exists() {
-        let _ = NGramDB::new(&source_paths, db_path).expect("Failed to create NGramDB");
+    if NGramDB::requires_rebuild(db_path).expect("Failed to inspect NGramDB schema") {
+        let _ = NGramDB::new(&sources, db_path).expect("Failed to create NGramDB");
     }
     let n_gram_db = NGramDB::load(db_path).expect("Failed to load NGramDB");
 

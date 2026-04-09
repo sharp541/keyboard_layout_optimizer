@@ -1,41 +1,26 @@
-# Repository Guidelines
+# AGENTS.md
 
-## Project Structure & Module Organization
-- `src/` contains the Rust application and library code.
-- `src/main.rs` is the executable entrypoint for layout optimization.
-- `src/lib.rs` exports core modules: `algorithms`, `keyboard_layout`, and `n_gram`.
-- `src/algorithms/genetic.rs` implements the genetic optimizer.
-- `src/keyboard_layout/` holds logical/physical layout models and hand/finger mapping.
-- `python/dataset.py` handles dataset download and preprocessing.
-- `data/` stores generated inputs and SQLite n-gram DB files (for example `ja_en.db`).
+このファイルはポインタ専用。現状説明や詳細なスタイルガイドは書かない。
+不足する文脈はコードと設定を読むこと。ポインタが壊れていたら修正を優先する。
 
-## Build, Test, and Development Commands
-- `cargo run --release` runs the optimizer with production performance.
-- `cargo test` runs Rust unit tests (currently centered on n-gram generation/DB behavior).
-- `cargo check` performs fast compile-time validation during iteration.
-- `cargo fmt` formats Rust code using `rustfmt` defaults.
-- `poetry install` installs Python dependencies.
-- `poetry run python python/dataset.py init --data-dir data` fetches raw corpora.
-- `poetry run python python/dataset.py --data-dir data` builds cleaned `ja.txt`/`en.txt`.
+## Routing
+- Rust の依存関係とエントリポイントは `Cargo.toml` と `src/main.rs` を読む。
+- 公開 API と主要モジュールの入口は `src/lib.rs` を読む。
+- 最適化ロジックは `src/algorithms/genetic.rs` を読む。
+- レイアウトモデルは `src/keyboard_layout.rs` と `src/keyboard_layout/` 以下を読む。
+- n-gram と既存テストは `src/n_gram.rs` を読む。
+- 追加の背景が必要なら `README.md` だけ確認する。
 
-## Coding Style & Naming Conventions
-- Rust: 4-space indentation, `snake_case` for functions/modules, `PascalCase` for types, `SCREAMING_SNAKE_CASE` for constants.
-- Keep modules focused: algorithm logic in `src/algorithms/`, layout/domain logic in `src/keyboard_layout/`.
-- Prefer small, explicit functions and avoid hidden side effects.
-- Run `cargo fmt` before committing; use `cargo clippy` when adding non-trivial logic.
+## Commands
+- Build: `cargo check`
+- Test: `cargo test`
+- Format: `cargo fmt --all`
+- Lint: `cargo clippy --all-targets --all-features`
+- Run optimizer: `cargo run --release`
 
-## Testing Guidelines
-- Add unit tests close to implementation using `#[cfg(test)] mod tests` (see `src/n_gram.rs`).
-- Name tests by behavior, e.g. `test_generate_n_grams`.
-- Ensure tests clean up temporary files/DBs they create.
-- Run `cargo test` locally before opening a PR.
-
-## Commit & Pull Request Guidelines
-- Follow the existing commit pattern: `<type>: <concise description>` (for example `refactor: optimize layout mutation logic`).
-- Use imperative, scope-specific summaries; keep unrelated changes in separate commits.
-- PRs should include: purpose, key implementation notes, commands run (`cargo test`, dataset steps if relevant), and linked issues.
-- Include sample output or screenshots only when behavior or reporting format changes.
-
-## Security & Configuration Tips
-- Keep credentials out of git. Files under `python/.env/` (for example tokens/certs) are local-only and must not be committed.
-- Treat `data/*.db` and large raw text files as generated artifacts unless a reviewer explicitly requests them.
+## Guardrails
+- 実装と矛盾する説明をこのファイルへ追記しない。真実のソースはコードとテスト。
+- 手動整形で差分を作らない。`cargo fmt --all` の結果を優先する。
+- Clippy 警告を無言で増やさない。`cargo clippy --all-targets --all-features` で確認する。
+- テストを壊したまま完了扱いにしない。`cargo test` を通すか、未実施理由を明記する。
+- 存在しないディレクトリや運用ルールを参照しない。参照先は実在パスだけにする。

@@ -726,7 +726,7 @@ mod tests {
     #[test]
     fn default_azik_extensions_are_assigned_to_consonant_keys_only() {
         let mut layout = LogicalLayout::from_usable_chars(&[
-            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'h', 'o', 'm', 'y', 'r', 'w', 'z', 'd',
+            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'm', 'r', 'w', 'z', 'd', 'b', 'g', 'p',
         ]);
 
         layout.assign_default_azik_extensions();
@@ -743,7 +743,7 @@ mod tests {
     #[test]
     fn default_azik_extensions_assign_each_token_and_parent_once() {
         let mut layout = LogicalLayout::from_usable_chars(&[
-            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'h', 'o', 'm', 'y', 'r', 'w', 'z', 'd',
+            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'm', 'r', 'w', 'z', 'd', 'b', 'g', 'p',
         ]);
 
         layout.assign_default_azik_extensions();

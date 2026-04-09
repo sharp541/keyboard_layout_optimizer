@@ -99,7 +99,11 @@ impl Genetic {
             islands.push(population);
         }
 
-        let elite_num = if self.population_size % 2 == 0 { 2 } else { 1 };
+        let elite_num = if self.population_size.is_multiple_of(2) {
+            2
+        } else {
+            1
+        };
         let mut count = 0;
         for i in 0..iterations {
             let stagnation = count;
@@ -693,7 +697,7 @@ mod tests {
 
     fn mixed_layout_for_tests() -> LogicalLayout {
         LogicalLayout::from_usable_chars(&[
-            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'm', 'o', 'r', 'w', 'z', 'd', 'h', 'y',
+            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'm', 'r', 'w', 'z', 'd', 'b', 'g', 'p',
         ])
     }
 
@@ -726,6 +730,42 @@ mod tests {
                 .expect("every AZIK token should be assigned exactly once");
             assert!(layout.can_host_extension(index));
         }
+    }
+
+    fn assign_test_extensions(layout: &mut LogicalLayout, ann_index: usize) {
+        layout
+            .assign_extension(ann_index, AzikExtensionToken::Ann)
+            .expect("ann should be assignable");
+        layout
+            .assign_extension(1, AzikExtensionToken::Inn)
+            .expect("inn should be assignable");
+        layout
+            .assign_extension(2, AzikExtensionToken::Unn)
+            .expect("unn should be assignable");
+        layout
+            .assign_extension(3, AzikExtensionToken::Enn)
+            .expect("enn should be assignable");
+        layout
+            .assign_extension(4, AzikExtensionToken::Onn)
+            .expect("onn should be assignable");
+        layout
+            .assign_extension(5, AzikExtensionToken::Ou)
+            .expect("ou should be assignable");
+        layout
+            .assign_extension(6, AzikExtensionToken::Ai)
+            .expect("ai should be assignable");
+        layout
+            .assign_extension(7, AzikExtensionToken::Ei)
+            .expect("ei should be assignable");
+        layout
+            .assign_extension(8, AzikExtensionToken::Oi)
+            .expect("oi should be assignable");
+        layout
+            .assign_extension(9, AzikExtensionToken::Uu)
+            .expect("uu should be assignable");
+        layout
+            .assign_extension(10, AzikExtensionToken::Oo)
+            .expect("oo should be assignable");
     }
 
     #[test]
@@ -799,54 +839,11 @@ mod tests {
 
                 let mut left = layout_for_tests();
                 left.clear_extensions();
-                left.assign_extension(0, AzikExtensionToken::Ann)
-                    .expect("index 0 should host ann");
-                left.assign_extension(1, AzikExtensionToken::Inn)
-                    .expect("index 1 should host inn");
-                left.assign_extension(2, AzikExtensionToken::Unn)
-                    .expect("index 2 should host unn");
-                left.assign_extension(3, AzikExtensionToken::Enn)
-                    .expect("index 3 should host enn");
-                left.assign_extension(4, AzikExtensionToken::Onn)
-                    .expect("index 4 should host onn");
-                left.assign_extension(5, AzikExtensionToken::Ai)
-                    .expect("index 5 should host ai");
-                left.assign_extension(6, AzikExtensionToken::Uu)
-                    .expect("index 6 should host uu");
-                left.assign_extension(7, AzikExtensionToken::Ei)
-                    .expect("index 7 should host ei");
-                left.assign_extension(8, AzikExtensionToken::Ou)
-                    .expect("index 8 should host ou");
+                assign_test_extensions(&mut left, 0);
 
                 let mut right = layout_for_tests();
                 right.clear_extensions();
-                right
-                    .assign_extension(9, AzikExtensionToken::Ann)
-                    .expect("index 9 should host ann");
-                right
-                    .assign_extension(1, AzikExtensionToken::Inn)
-                    .expect("index 1 should host inn");
-                right
-                    .assign_extension(2, AzikExtensionToken::Unn)
-                    .expect("index 2 should host unn");
-                right
-                    .assign_extension(3, AzikExtensionToken::Enn)
-                    .expect("index 3 should host enn");
-                right
-                    .assign_extension(4, AzikExtensionToken::Onn)
-                    .expect("index 4 should host onn");
-                right
-                    .assign_extension(5, AzikExtensionToken::Ai)
-                    .expect("index 5 should host ai");
-                right
-                    .assign_extension(6, AzikExtensionToken::Uu)
-                    .expect("index 6 should host uu");
-                right
-                    .assign_extension(7, AzikExtensionToken::Ei)
-                    .expect("index 7 should host ei");
-                right
-                    .assign_extension(8, AzikExtensionToken::Ou)
-                    .expect("index 8 should host ou");
+                assign_test_extensions(&mut right, 11);
 
                 let left_score = left.evaluate(&physical_layout, &tri_grams);
                 let right_score = right.evaluate(&physical_layout, &tri_grams);
@@ -865,33 +862,7 @@ mod tests {
             'p', 'f', 'b', 'g', 'd', 'z', 'w', 'r', 'm', 'n', 't', 's', 'k', 'h', 'y',
         ]);
         right_layout.clear_extensions();
-        right_layout
-            .assign_extension(0, AzikExtensionToken::Ann)
-            .expect("index 0 should host ann");
-        right_layout
-            .assign_extension(1, AzikExtensionToken::Inn)
-            .expect("index 1 should host inn");
-        right_layout
-            .assign_extension(2, AzikExtensionToken::Unn)
-            .expect("index 2 should host unn");
-        right_layout
-            .assign_extension(3, AzikExtensionToken::Enn)
-            .expect("index 3 should host enn");
-        right_layout
-            .assign_extension(4, AzikExtensionToken::Onn)
-            .expect("index 4 should host onn");
-        right_layout
-            .assign_extension(5, AzikExtensionToken::Ai)
-            .expect("index 5 should host ai");
-        right_layout
-            .assign_extension(6, AzikExtensionToken::Uu)
-            .expect("index 6 should host uu");
-        right_layout
-            .assign_extension(7, AzikExtensionToken::Ei)
-            .expect("index 7 should host ei");
-        right_layout
-            .assign_extension(8, AzikExtensionToken::Ou)
-            .expect("index 8 should host ou");
+        assign_test_extensions(&mut right_layout, 0);
         let right = Individual::new(right_layout);
 
         let before_base = right.layout.output();
@@ -917,33 +888,7 @@ mod tests {
         let left = Individual::new(layout_for_tests());
         let mut right_layout = layout_for_tests();
         right_layout.clear_extensions();
-        right_layout
-            .assign_extension(9, AzikExtensionToken::Ann)
-            .expect("index 9 should host ann");
-        right_layout
-            .assign_extension(1, AzikExtensionToken::Inn)
-            .expect("index 1 should host inn");
-        right_layout
-            .assign_extension(2, AzikExtensionToken::Unn)
-            .expect("index 2 should host unn");
-        right_layout
-            .assign_extension(3, AzikExtensionToken::Enn)
-            .expect("index 3 should host enn");
-        right_layout
-            .assign_extension(4, AzikExtensionToken::Onn)
-            .expect("index 4 should host onn");
-        right_layout
-            .assign_extension(5, AzikExtensionToken::Ai)
-            .expect("index 5 should host ai");
-        right_layout
-            .assign_extension(6, AzikExtensionToken::Uu)
-            .expect("index 6 should host uu");
-        right_layout
-            .assign_extension(7, AzikExtensionToken::Ei)
-            .expect("index 7 should host ei");
-        right_layout
-            .assign_extension(8, AzikExtensionToken::Ou)
-            .expect("index 8 should host ou");
+        assign_test_extensions(&mut right_layout, 11);
         let right = Individual::new(right_layout);
 
         let before_base = left.layout.output();

@@ -30,3 +30,6 @@ graphs/*
 
 # secrets
 python/.env
+
+# local Codex session artifacts
+.codex

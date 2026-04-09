@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::env;
 use std::path::Path;
 
@@ -127,12 +126,14 @@ fn main() -> Result<(), std::io::Error> {
         'y', 'b', 'l', 'd', 'j', 'x', 'f', 'w', // lower row
     ];
 
-    let custom_layout_set: HashSet<char> = custom_layout.iter().cloned().collect();
-    let tri_grams = n_gram_db
-        .get_tri_grams_weighted(&custom_layout_set, ja_weight, en_weight)
-        .expect("Failed to get weighted tri grams");
-
     let custom = LogicalLayout::from_usable_chars(custom_layout.as_ref());
+    let tri_grams = n_gram_db
+        .get_tri_grams_weighted_for_layout(
+            |c| custom.resolve_char_index(c).is_some(),
+            ja_weight,
+            en_weight,
+        )
+        .expect("Failed to get weighted tri grams");
     let score = custom.evaluate(&physical_layout, &tri_grams);
     println!("custom score: {}", score);
     custom.print();

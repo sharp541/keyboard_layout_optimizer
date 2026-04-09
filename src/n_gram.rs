@@ -122,6 +122,130 @@ pub struct NGramDB {
 }
 
 impl NGramDB {
+    fn get_tri_grams_with_filter<F>(
+        &self,
+        mut is_usable: F,
+    ) -> Result<HashMap<LogicalNGram<3>, f32>>
+    where
+        F: FnMut(char) -> bool,
+    {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT n_gram, count FROM n_grams WHERE n = ?1")
+            .expect("Failed to prepare statement");
+        let n_grams_iter = stmt
+            .query_map(params![3_i32], |row| {
+                let n_gram: String = row.get(0).expect("Failed to get n-gram");
+                let count: u32 = row.get(1).expect("Failed to get frequency");
+                Ok((
+                    LogicalNGram::new(n_gram.chars().collect::<Vec<char>>().try_into().unwrap()),
+                    count as f32,
+                ))
+            })
+            .expect("Failed to get n-grams");
+
+        let mut n_gram_map: HashMap<LogicalNGram<3>, f32> = HashMap::new();
+        let mut total_count: f32 = 0.0;
+        for n_gram in n_grams_iter {
+            let (n_gram_str, count) = n_gram.expect("Failed to get n-gram");
+            if n_gram_str.0.iter().all(|&c| is_usable(c)) {
+                total_count += count;
+                n_gram_map.insert(n_gram_str, count);
+            }
+        }
+
+        if total_count > f32::EPSILON {
+            for count in n_gram_map.values_mut() {
+                *count /= total_count;
+            }
+        }
+
+        Ok(n_gram_map)
+    }
+
+    fn get_tri_grams_weighted_with_filter<F>(
+        &self,
+        mut is_usable: F,
+        ja_weight: f32,
+        en_weight: f32,
+    ) -> Result<HashMap<LogicalNGram<3>, f32>>
+    where
+        F: FnMut(char) -> bool,
+    {
+        if !table_exists(&self.conn, "n_grams_by_source")
+            || !table_exists(&self.conn, "source_stats")
+        {
+            return self.get_tri_grams_with_filter(is_usable);
+        }
+
+        let (ja_weight, en_weight) = normalize_weights(ja_weight, en_weight);
+
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT s.source_kind, n.n_gram, n.count
+                 FROM n_grams_by_source n
+                 JOIN source_stats s ON s.source_id = n.source_id
+                 WHERE n.n = ?1",
+            )
+            .expect("Failed to prepare weighted n-gram query");
+
+        let rows = stmt
+            .query_map(params![3_i32], |row| {
+                let source_kind: String = row.get(0)?;
+                let n_gram: String = row.get(1)?;
+                let count: u32 = row.get(2)?;
+                Ok((source_kind, n_gram, count as f32))
+            })
+            .expect("Failed to query weighted n-grams");
+
+        let mut ja_counts: HashMap<LogicalNGram<3>, f32> = HashMap::new();
+        let mut en_counts: HashMap<LogicalNGram<3>, f32> = HashMap::new();
+        let mut ja_total = 0.0_f32;
+        let mut en_total = 0.0_f32;
+
+        for row in rows {
+            let (source_kind, n_gram, count) = row.expect("Failed to read weighted n-gram row");
+            let n_gram_chars: [char; 3] = n_gram.chars().collect::<Vec<char>>().try_into().unwrap();
+            if !n_gram_chars.iter().all(|&c| is_usable(c)) {
+                continue;
+            }
+            let key = LogicalNGram::new(n_gram_chars);
+            match source_kind.as_str() {
+                "ja" => {
+                    ja_total += count;
+                    *ja_counts.entry(key).or_insert(0.0) += count;
+                }
+                "en" => {
+                    en_total += count;
+                    *en_counts.entry(key).or_insert(0.0) += count;
+                }
+                _ => {}
+            }
+        }
+
+        if ja_total <= f32::EPSILON || en_total <= f32::EPSILON {
+            return self.get_tri_grams_with_filter(is_usable);
+        }
+
+        for count in ja_counts.values_mut() {
+            *count /= ja_total;
+        }
+        for count in en_counts.values_mut() {
+            *count /= en_total;
+        }
+
+        let mut merged: HashMap<LogicalNGram<3>, f32> = HashMap::new();
+        for (n_gram, prob) in ja_counts {
+            *merged.entry(n_gram).or_insert(0.0) += ja_weight * prob;
+        }
+        for (n_gram, prob) in en_counts {
+            *merged.entry(n_gram).or_insert(0.0) += en_weight * prob;
+        }
+
+        Ok(merged)
+    }
+
     pub fn requires_rebuild<P: AsRef<Path>>(db_path: P) -> Result<bool> {
         if !db_path.as_ref().exists() {
             return Ok(true);
@@ -337,38 +461,17 @@ impl NGramDB {
         &self,
         usable_chars: &HashSet<char>,
     ) -> Result<HashMap<LogicalNGram<3>, f32>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT n_gram, count FROM n_grams WHERE n = ?1")
-            .expect("Failed to prepare statement");
-        let n_grams_iter = stmt
-            .query_map(params![3_i32], |row| {
-                let n_gram: String = row.get(0).expect("Failed to get n-gram");
-                let count: u32 = row.get(1).expect("Failed to get frequency");
-                Ok((
-                    LogicalNGram::new(n_gram.chars().collect::<Vec<char>>().try_into().unwrap()),
-                    count as f32,
-                ))
-            })
-            .expect("Failed to get n-grams");
+        self.get_tri_grams_with_filter(|c| usable_chars.contains(&c))
+    }
 
-        let mut n_gram_map: HashMap<LogicalNGram<3>, f32> = HashMap::new();
-        let mut total_count: f32 = 0.0;
-        for n_gram in n_grams_iter {
-            let (n_gram_str, count) = n_gram.expect("Failed to get n-gram");
-            if n_gram_str.0.iter().all(|&c| usable_chars.contains(&c)) {
-                total_count += count;
-                n_gram_map.insert(n_gram_str, count);
-            }
-        }
-
-        if total_count > f32::EPSILON {
-            for count in n_gram_map.values_mut() {
-                *count /= total_count;
-            }
-        }
-
-        Ok(n_gram_map)
+    pub fn get_tri_grams_for_layout<F>(
+        &self,
+        can_resolve_char: F,
+    ) -> Result<HashMap<LogicalNGram<3>, f32>>
+    where
+        F: FnMut(char) -> bool,
+    {
+        self.get_tri_grams_with_filter(can_resolve_char)
     }
 
     pub fn get_tri_grams_weighted(
@@ -377,78 +480,19 @@ impl NGramDB {
         ja_weight: f32,
         en_weight: f32,
     ) -> Result<HashMap<LogicalNGram<3>, f32>> {
-        if !table_exists(&self.conn, "n_grams_by_source")
-            || !table_exists(&self.conn, "source_stats")
-        {
-            return self.get_tri_grams(usable_chars);
-        }
+        self.get_tri_grams_weighted_with_filter(|c| usable_chars.contains(&c), ja_weight, en_weight)
+    }
 
-        let (ja_weight, en_weight) = normalize_weights(ja_weight, en_weight);
-
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT s.source_kind, n.n_gram, n.count
-                 FROM n_grams_by_source n
-                 JOIN source_stats s ON s.source_id = n.source_id
-                 WHERE n.n = ?1",
-            )
-            .expect("Failed to prepare weighted n-gram query");
-
-        let rows = stmt
-            .query_map(params![3_i32], |row| {
-                let source_kind: String = row.get(0)?;
-                let n_gram: String = row.get(1)?;
-                let count: u32 = row.get(2)?;
-                Ok((source_kind, n_gram, count as f32))
-            })
-            .expect("Failed to query weighted n-grams");
-
-        let mut ja_counts: HashMap<LogicalNGram<3>, f32> = HashMap::new();
-        let mut en_counts: HashMap<LogicalNGram<3>, f32> = HashMap::new();
-        let mut ja_total = 0.0_f32;
-        let mut en_total = 0.0_f32;
-
-        for row in rows {
-            let (source_kind, n_gram, count) = row.expect("Failed to read weighted n-gram row");
-            let n_gram_chars: [char; 3] = n_gram.chars().collect::<Vec<char>>().try_into().unwrap();
-            if !n_gram_chars.iter().all(|&c| usable_chars.contains(&c)) {
-                continue;
-            }
-            let key = LogicalNGram::new(n_gram_chars);
-            match source_kind.as_str() {
-                "ja" => {
-                    ja_total += count;
-                    *ja_counts.entry(key).or_insert(0.0) += count;
-                }
-                "en" => {
-                    en_total += count;
-                    *en_counts.entry(key).or_insert(0.0) += count;
-                }
-                _ => {}
-            }
-        }
-
-        if ja_total <= f32::EPSILON || en_total <= f32::EPSILON {
-            return self.get_tri_grams(usable_chars);
-        }
-
-        for count in ja_counts.values_mut() {
-            *count /= ja_total;
-        }
-        for count in en_counts.values_mut() {
-            *count /= en_total;
-        }
-
-        let mut merged: HashMap<LogicalNGram<3>, f32> = HashMap::new();
-        for (n_gram, prob) in ja_counts {
-            *merged.entry(n_gram).or_insert(0.0) += ja_weight * prob;
-        }
-        for (n_gram, prob) in en_counts {
-            *merged.entry(n_gram).or_insert(0.0) += en_weight * prob;
-        }
-
-        Ok(merged)
+    pub fn get_tri_grams_weighted_for_layout<F>(
+        &self,
+        can_resolve_char: F,
+        ja_weight: f32,
+        en_weight: f32,
+    ) -> Result<HashMap<LogicalNGram<3>, f32>>
+    where
+        F: FnMut(char) -> bool,
+    {
+        self.get_tri_grams_weighted_with_filter(can_resolve_char, ja_weight, en_weight)
     }
 }
 
@@ -456,6 +500,7 @@ impl NGramDB {
 mod tests {
     use super::*;
     use crate::azik_extension::AzikExtensionToken;
+    use crate::keyboard_layout::{Finger, LogicalLayout, PhysicalLayout, NUM_COLS, NUM_ROWS};
     use std::fs;
 
     fn test_source<'a>(name: &'a str, kind: SourceKind, path: &'a str) -> NGramSource<&'a str> {
@@ -818,5 +863,69 @@ mod tests {
         );
 
         fs::remove_file(db_path).expect("Failed to remove legacy test database");
+    }
+
+    #[test]
+    fn test_layout_filter_keeps_extension_trigrams_when_parent_key_exists() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let ja_path = "test_layout_filter_ja.txt";
+                let db_path = "test_layout_filter.db";
+
+                fs::write(ja_path, "kannzi").expect("Failed to write JA test file");
+
+                let n_gram_db = NGramDB::new(
+                    &[test_source(
+                        "japanese_corpus",
+                        SourceKind::Japanese,
+                        ja_path,
+                    )],
+                    db_path,
+                )
+                .expect("Failed to create NGramDB");
+
+                let mut layout = LogicalLayout::from_usable_chars(&['k', 'a', 'z', 'i']);
+                layout
+                    .assign_extension(0, AzikExtensionToken::Ann)
+                    .expect("consonant key should accept extension");
+
+                let ann = AzikExtensionToken::Ann.as_char();
+                let tri_grams_without_extension = n_gram_db
+                    .get_tri_grams_for_layout(|c| matches!(c, 'k' | 'z' | 'i'))
+                    .expect("Failed to get tri-grams without extension");
+                assert!(
+                    !tri_grams_without_extension.contains_key(&LogicalNGram::new(['k', ann, 'z']))
+                );
+
+                let tri_grams_with_extension = n_gram_db
+                    .get_tri_grams_for_layout(|c| layout.resolve_char_index(c).is_some())
+                    .expect("Failed to get tri-grams with extension");
+                assert!(tri_grams_with_extension.contains_key(&LogicalNGram::new(['k', ann, 'z'])));
+                assert!(tri_grams_with_extension.contains_key(&LogicalNGram::new([ann, 'z', 'i'])));
+
+                let cost_matrix = [1.0; NUM_COLS * NUM_ROWS];
+                let finger_matrix = std::array::from_fn(|_| Finger::I);
+                let mut physical_layout = PhysicalLayout::new(cost_matrix, finger_matrix)
+                    .expect("layout should be valid");
+                physical_layout.calculate_tri_gram_cost();
+
+                let expected_cost = physical_layout.get_tri_gram_cost(
+                    layout.get_char_index('k'),
+                    layout.get_char_index('k'),
+                    layout.get_char_index('z'),
+                );
+                let actual_cost = layout.evaluate(
+                    &physical_layout,
+                    &HashMap::from([(LogicalNGram::new(['k', ann, 'z']), 1.0)]),
+                );
+                assert_eq!(actual_cost, expected_cost);
+
+                fs::remove_file(ja_path).expect("Failed to remove JA test file");
+                fs::remove_file(db_path).expect("Failed to remove test database");
+            })
+            .expect("thread should spawn")
+            .join()
+            .expect("thread should finish");
     }
 }

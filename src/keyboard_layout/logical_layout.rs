@@ -2,7 +2,7 @@ use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
 use super::physical_layout::{PhysicalLayout, NUM_COLS, NUM_LAYERS, NUM_ROWS};
-use crate::azik_extension::{is_consonant, AzikExtensionToken};
+use crate::azik_extension::{is_consonant, AzikExtensionToken, AZIK_EXTENSION_TOKENS};
 use crate::n_gram::LogicalNGram;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +22,12 @@ pub enum LogicalLayoutError {
         token: AzikExtensionToken,
         index: usize,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayoutLookup {
+    Char(char),
+    CharId(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -94,10 +100,22 @@ impl LogicalLayout {
     ) -> f32 {
         tri_grams
             .iter()
-            .map(|(n_gram, score)| -> f32 {
-                let k1 = self.get_char_index(n_gram.get(0));
-                let k2 = self.get_char_index(n_gram.get(1));
-                let k3 = self.get_char_index(n_gram.get(2));
+            .map(|(n_gram, score)| {
+                let k1 = self.resolve_lookup_or_panic(
+                    LayoutLookup::Char(n_gram.get(0)),
+                    "evaluate",
+                    Some(n_gram),
+                );
+                let k2 = self.resolve_lookup_or_panic(
+                    LayoutLookup::Char(n_gram.get(1)),
+                    "evaluate",
+                    Some(n_gram),
+                );
+                let k3 = self.resolve_lookup_or_panic(
+                    LayoutLookup::Char(n_gram.get(2)),
+                    "evaluate",
+                    Some(n_gram),
+                );
                 *score * physical_layout.get_tri_gram_cost(k1, k2, k3)
             })
             .sum()
@@ -110,10 +128,22 @@ impl LogicalLayout {
     ) -> f32 {
         tri_grams_vec
             .par_iter()
-            .map(|(n_gram, score)| -> f32 {
-                let k1 = self.get_char_index(n_gram.get(0));
-                let k2 = self.get_char_index(n_gram.get(1));
-                let k3 = self.get_char_index(n_gram.get(2));
+            .map(|(n_gram, score)| {
+                let k1 = self.resolve_lookup_or_panic(
+                    LayoutLookup::Char(n_gram.get(0)),
+                    "evaluate_par",
+                    Some(n_gram),
+                );
+                let k2 = self.resolve_lookup_or_panic(
+                    LayoutLookup::Char(n_gram.get(1)),
+                    "evaluate_par",
+                    Some(n_gram),
+                );
+                let k3 = self.resolve_lookup_or_panic(
+                    LayoutLookup::Char(n_gram.get(2)),
+                    "evaluate_par",
+                    Some(n_gram),
+                );
                 *score * physical_layout.get_tri_gram_cost(k1, k2, k3)
             })
             .sum()
@@ -138,14 +168,30 @@ impl LogicalLayout {
     }
 
     pub fn get_char_index(&self, c: char) -> usize {
+        self.resolve_lookup(LayoutLookup::Char(c))
+    }
+
+    pub fn resolve_char_index(&self, c: char) -> Option<usize> {
         if let Some(&index) = self.extension_parent_map.get(&c) {
-            return index;
+            return Some(index);
         }
 
-        *self
-            .char_map
-            .get(&c)
-            .unwrap_or_else(|| panic!("Character {} not found", c))
+        self.char_map.get(&c).copied()
+    }
+
+    pub fn resolve_lookup(&self, lookup: LayoutLookup) -> usize {
+        self.resolve_lookup_opt(lookup)
+            .unwrap_or_else(|| match lookup {
+                LayoutLookup::Char(c) => panic!("Character {} not found", c),
+                LayoutLookup::CharId(id) => panic!("Character ID {} not found", id),
+            })
+    }
+
+    pub fn resolve_lookup_opt(&self, lookup: LayoutLookup) -> Option<usize> {
+        match lookup {
+            LayoutLookup::Char(c) => self.resolve_char_index(c),
+            LayoutLookup::CharId(id) => self.id_to_index.get(id).copied(),
+        }
     }
 
     pub fn get(&self, index: usize) -> char {
@@ -225,6 +271,28 @@ impl LogicalLayout {
         self.extension_parent_map.get(&token.as_char()).copied()
     }
 
+    pub fn assign_default_azik_extensions(&mut self) {
+        for index in 0..self.layout.len() {
+            if self.extension_map.len() == AZIK_EXTENSION_TOKENS.len() {
+                break;
+            }
+            if !self.can_host_extension(index) || self.extension_map.contains_key(&index) {
+                continue;
+            }
+
+            let Some(token) = AZIK_EXTENSION_TOKENS
+                .iter()
+                .copied()
+                .find(|token| !self.extension_parent_map.contains_key(&token.as_char()))
+            else {
+                break;
+            };
+
+            self.assign_extension(index, token)
+                .expect("default AZIK extension assignment should stay valid");
+        }
+    }
+
     pub fn can_host_extension(&self, index: usize) -> bool {
         self.layout
             .get(index)
@@ -273,17 +341,38 @@ impl LogicalLayout {
     pub fn evaluate_ids(
         &self,
         physical_layout: &PhysicalLayout,
-        tri_grams_ids: &[([usize; 3], f32)],
+        tri_grams_ids: &[([LayoutLookup; 3], f32)],
     ) -> f32 {
         tri_grams_ids
             .par_iter()
-            .map(|(ids, score)| -> f32 {
-                let k1 = self.get_index_by_id(ids[0]);
-                let k2 = self.get_index_by_id(ids[1]);
-                let k3 = self.get_index_by_id(ids[2]);
+            .map(|(ids, score)| {
+                let k1 = self.resolve_lookup_or_panic(ids[0], "evaluate_ids", None);
+                let k2 = self.resolve_lookup_or_panic(ids[1], "evaluate_ids", None);
+                let k3 = self.resolve_lookup_or_panic(ids[2], "evaluate_ids", None);
                 *score * physical_layout.get_tri_gram_cost(k1, k2, k3)
             })
             .sum()
+    }
+
+    fn resolve_lookup_or_panic(
+        &self,
+        lookup: LayoutLookup,
+        context: &'static str,
+        n_gram: Option<&LogicalNGram<3>>,
+    ) -> usize {
+        self.resolve_lookup_opt(lookup)
+            .unwrap_or_else(|| match (lookup, n_gram) {
+                (LayoutLookup::Char(c), Some(n_gram)) => {
+                    panic!("{context}: unresolved character {c:?} in tri-gram {n_gram:?}")
+                }
+                (LayoutLookup::Char(c), None) => panic!("{context}: unresolved character {c:?}"),
+                (LayoutLookup::CharId(id), Some(n_gram)) => {
+                    panic!("{context}: unresolved character id {id} in tri-gram {n_gram:?}")
+                }
+                (LayoutLookup::CharId(id), None) => {
+                    panic!("{context}: unresolved character id {id}")
+                }
+            })
     }
 
     fn drop_extension_if_invalid(&mut self, index: usize) {
@@ -301,6 +390,18 @@ impl LogicalLayout {
 mod tests {
     use super::*;
     use crate::azik_extension::is_azik_extension_token;
+
+    fn test_physical_layout() -> PhysicalLayout {
+        let cost_matrix = [1.0; NUM_COLS * NUM_ROWS];
+        let finger_matrix = std::array::from_fn(|index| match index % NUM_COLS {
+            0..=4 => super::super::Finger::I,
+            _ => super::super::Finger::M,
+        });
+        let mut physical_layout =
+            PhysicalLayout::new(cost_matrix, finger_matrix).expect("layout should be valid");
+        physical_layout.calculate_tri_gram_cost();
+        physical_layout
+    }
 
     #[test]
     fn consonant_keys_can_hold_extensions_and_resolve_to_parent_index() {
@@ -392,5 +493,149 @@ mod tests {
             None
         );
         assert!(!is_azik_extension_token(layout.get(0)));
+    }
+
+    #[test]
+    fn resolve_char_index_returns_none_for_unassigned_extension_tokens() {
+        let layout = LogicalLayout::from_usable_chars(&['k', 'a', 's']);
+
+        assert_eq!(
+            layout.resolve_char_index(AzikExtensionToken::Ann.as_char()),
+            None
+        );
+    }
+
+    #[test]
+    fn resolve_lookup_supports_both_char_ids_and_extension_tokens() {
+        let mut layout = LogicalLayout::from_usable_chars(&['k', 'a', 's']);
+
+        layout
+            .assign_extension(0, AzikExtensionToken::Ann)
+            .expect("consonant key should accept extension");
+
+        assert_eq!(
+            layout.resolve_lookup(LayoutLookup::Char(AzikExtensionToken::Ann.as_char())),
+            layout.get_char_index('k')
+        );
+        assert_eq!(
+            layout.resolve_lookup(LayoutLookup::CharId(
+                *layout.get_char_to_id().get(&'s').expect("id should exist")
+            )),
+            layout.get_char_index('s')
+        );
+    }
+
+    #[test]
+    fn evaluate_paths_score_assigned_extension_tokens_with_parent_key_cost() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let mut layout = LogicalLayout::from_usable_chars(&['k', 'a', 's']);
+                layout
+                    .assign_extension(0, AzikExtensionToken::Ann)
+                    .expect("consonant key should accept extension");
+
+                let physical_layout = test_physical_layout();
+                let ann = AzikExtensionToken::Ann.as_char();
+                let tri_gram = LogicalNGram::new(['k', ann, 's']);
+                let tri_grams = HashMap::from([(tri_gram, 1.0)]);
+                let tri_gram_ids = [(
+                    [
+                        LayoutLookup::CharId(
+                            *layout.get_char_to_id().get(&'k').expect("id should exist"),
+                        ),
+                        LayoutLookup::Char(ann),
+                        LayoutLookup::CharId(
+                            *layout.get_char_to_id().get(&'s').expect("id should exist"),
+                        ),
+                    ],
+                    1.0,
+                )];
+
+                let expected_cost = physical_layout.get_tri_gram_cost(
+                    layout.get_char_index('k'),
+                    layout.get_char_index('k'),
+                    layout.get_char_index('s'),
+                );
+
+                assert_eq!(layout.evaluate(&physical_layout, &tri_grams), expected_cost);
+                assert_eq!(
+                    layout.evaluate_ids(&physical_layout, &tri_gram_ids),
+                    expected_cost
+                );
+            })
+            .expect("thread should spawn")
+            .join()
+            .expect("thread should finish");
+    }
+
+    #[test]
+    fn evaluate_paths_panic_on_unassigned_extension_tokens() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let layout = LogicalLayout::from_usable_chars(&['k', 'a', 's']);
+                let physical_layout = test_physical_layout();
+                let ann = AzikExtensionToken::Ann.as_char();
+                let tri_gram = LogicalNGram::new(['k', ann, 's']);
+                let tri_grams = HashMap::from([(tri_gram, 1.0)]);
+                let tri_gram_ids = [(
+                    [
+                        LayoutLookup::CharId(
+                            *layout.get_char_to_id().get(&'k').expect("id should exist"),
+                        ),
+                        LayoutLookup::Char(ann),
+                        LayoutLookup::CharId(
+                            *layout.get_char_to_id().get(&'s').expect("id should exist"),
+                        ),
+                    ],
+                    1.0,
+                )];
+
+                let evaluate_err =
+                    std::panic::catch_unwind(|| layout.evaluate(&physical_layout, &tri_grams))
+                        .expect_err("evaluate should fail fast on unresolved extension");
+                let evaluate_message = panic_message(&evaluate_err);
+                assert!(evaluate_message.contains("evaluate: unresolved character"));
+                assert!(evaluate_message.contains(&format!("{ann:?}")));
+
+                let evaluate_ids_err = std::panic::catch_unwind(|| {
+                    layout.evaluate_ids(&physical_layout, &tri_gram_ids)
+                })
+                .expect_err("evaluate_ids should fail fast on unresolved extension");
+                let evaluate_ids_message = panic_message(&evaluate_ids_err);
+                assert!(evaluate_ids_message.contains("evaluate_ids: unresolved character"));
+                assert!(evaluate_ids_message.contains(&format!("{ann:?}")));
+            })
+            .expect("thread should spawn")
+            .join()
+            .expect("thread should finish");
+    }
+
+    fn panic_message(err: &Box<dyn std::any::Any + Send>) -> String {
+        if let Some(message) = err.downcast_ref::<String>() {
+            return message.clone();
+        }
+        if let Some(message) = err.downcast_ref::<&str>() {
+            return (*message).to_string();
+        }
+        "non-string panic payload".to_string()
+    }
+
+    #[test]
+    fn default_azik_extensions_are_assigned_to_consonant_keys_only() {
+        let mut layout = LogicalLayout::from_usable_chars(&[
+            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'h', 'o', 'm', 'y', 'r', 'w', 'z',
+        ]);
+
+        layout.assign_default_azik_extensions();
+
+        for token in AZIK_EXTENSION_TOKENS {
+            let index = layout
+                .get_extension_parent_index(token)
+                .expect("every token should get a default parent");
+            assert!(layout.can_host_extension(index));
+            assert_eq!(layout.resolve_char_index(token.as_char()), Some(index));
+        }
     }
 }

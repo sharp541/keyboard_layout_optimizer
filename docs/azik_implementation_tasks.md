@@ -15,7 +15,7 @@
 | T02 | DONE | 日本語前処理器の実装 | `src/n_gram.rs` または新規前処理モジュール | T01 | 左から最長一致、子音直後のみ専用トークン化、`kannou -> k + <ann> + o + u` を満たす |
 | T03 | DONE | n-gram DB 生成時に source ごとの前処理を適用 | `src/n_gram.rs` | T02 | 日本語 source のみ前処理して DB 化でき、英語 source には影響しない |
 | T04 | DONE | 拡張付きキー表現の導入 | `src/keyboard_layout/logical_layout.rs` 周辺 | T01 | 通常文字配置とは別に「子音キー -> 拡張トークン」の割当を保持できる |
-| T05 | TODO | 拡張付きキーの検索・評価 API 実装 | `src/keyboard_layout/logical_layout.rs`, `src/n_gram.rs` | T04 | 専用トークンが親子音キーと同じ index/cost で評価される |
+| T05 | DONE | 拡張付きキーの検索・評価 API 実装 | `src/keyboard_layout/logical_layout.rs`, `src/n_gram.rs` | T04 | 専用トークンが親子音キーと同じ index/cost で評価される |
 | T06 | TODO | 遺伝的アルゴリズムに拡張割当遺伝子を追加 | `src/algorithms/genetic.rs` | T04, T05 | 通常キー配置と拡張割当を別に変異できる |
 | T07 | TODO | 交叉・突然変異戦略の分離 | `src/algorithms/genetic.rs` | T06 | 通常キーのみ入替、拡張のみ入替の両操作が存在する |
 | T08 | TODO | レイアウト出力の可読化 | `src/keyboard_layout/logical_layout.rs`, `src/main.rs` | T04 | `s(ann)` の形式で表示できる |
@@ -94,12 +94,13 @@
 
 ### T05 拡張付きキーの検索・評価 API 実装
 
-- Status: `TODO`
+- Status: `DONE`
 - 目的: 専用トークンが親子音キーと同一コストで評価されるようにする
 - 作業項目:
 - `get_char_index` 相当の API を拡張対応にする
 - 通常文字と拡張トークンの両方を tri-gram 評価へ渡せるようにする
 - `evaluate` / `evaluate_ids` のどちらを基準に保守するか決めて整理する
+- Note: T05 は検索・評価 API と回帰テストまでに留め、既定の拡張割当を最適化実行系へ組み込む変更は T06/T08 完了まで入れない
 - 完了条件:
 - `<ann>` の index は親子音キーの index を返す
 - 専用トークンを含む tri-gram が panic せず評価できる

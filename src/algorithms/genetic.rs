@@ -1,9 +1,9 @@
 use fastrand;
 use rand::prelude::*;
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use crate::keyboard_layout::{LogicalLayout, PhysicalLayout};
+use crate::keyboard_layout::{LayoutLookup, LogicalLayout, PhysicalLayout};
 use crate::n_gram::{LogicalNGram, NGramDB};
 
 pub struct Genetic {
@@ -35,9 +35,12 @@ impl Genetic {
     ) {
         let initial_layout = LogicalLayout::from_usable_chars(usable_chars);
         let mut best_layout = Individual::new(initial_layout.clone());
-        let usable_chars_set: HashSet<char> = usable_chars.iter().cloned().collect();
         let tri_grams = ngram_db
-            .get_tri_grams_weighted(&usable_chars_set, ja_weight, en_weight)
+            .get_tri_grams_weighted_for_layout(
+                |c| initial_layout.resolve_char_index(c).is_some(),
+                ja_weight,
+                en_weight,
+            )
             .expect("Failed to get tri grams");
         // 使用文字に連番IDを付与（初期レイアウトと同一順）
         let char_to_id: HashMap<char, usize> = usable_chars
@@ -46,13 +49,20 @@ impl Genetic {
             .map(|(i, &c)| (c, i))
             .collect();
         // tri_gramsをID化してVecに前処理
-        let tri_grams_ids: Vec<([usize; 3], f32)> = tri_grams
+        let tri_grams_ids: Vec<([LayoutLookup; 3], f32)> = tri_grams
             .iter()
             .map(|(ng, s)| {
-                let id0 = *char_to_id.get(&ng.get(0)).expect("char id missing");
-                let id1 = *char_to_id.get(&ng.get(1)).expect("char id missing");
-                let id2 = *char_to_id.get(&ng.get(2)).expect("char id missing");
-                ([id0, id1, id2], *s)
+                let lookup = |c| {
+                    char_to_id
+                        .get(&c)
+                        .copied()
+                        .map(LayoutLookup::CharId)
+                        .unwrap_or(LayoutLookup::Char(c))
+                };
+                (
+                    [lookup(ng.get(0)), lookup(ng.get(1)), lookup(ng.get(2))],
+                    *s,
+                )
             })
             .collect();
         best_layout.score = best_layout

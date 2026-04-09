@@ -19,11 +19,7 @@ impl KeyLocation {
         // let row = (index % (NUM_COLS * NUM_ROWS)) / NUM_COLS;
         let col = index % NUM_COLS;
         let index = index % (NUM_COLS * NUM_ROWS);
-        KeyLocation {
-            col,
-            layer,
-            index,
-        }
+        KeyLocation { col, layer, index }
     }
 
     pub fn hand(&self) -> Hand {

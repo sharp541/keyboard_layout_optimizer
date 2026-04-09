@@ -11,7 +11,7 @@
 
 | ID | Status | Task | Main files | Depends on | Completion criteria |
 | --- | --- | --- | --- | --- | --- |
-| T01 | TODO | 拡張トークン定義と共通ユーティリティ追加 | `src/` 新規共通モジュール, `src/lib.rs` | - | 9種の拡張トークン、表示名、母音/子音判定、内部 `char` 変換が一元管理されている |
+| T01 | DONE | 拡張トークン定義と共通ユーティリティ追加 | `src/` 新規共通モジュール, `src/lib.rs` | - | 9種の拡張トークン、表示名、母音/子音判定、内部 `char` 変換が一元管理されている |
 | T02 | TODO | 日本語前処理器の実装 | `src/n_gram.rs` または新規前処理モジュール | T01 | 左から最長一致、子音直後のみ専用トークン化、`kannou -> k + <ann> + o + u` を満たす |
 | T03 | TODO | n-gram DB 生成時に source ごとの前処理を適用 | `src/n_gram.rs` | T02 | 日本語 source のみ前処理して DB 化でき、英語 source には影響しない |
 | T04 | TODO | 拡張付きキー表現の導入 | `src/keyboard_layout/logical_layout.rs` 周辺 | T01 | 通常文字配置とは別に「子音キー -> 拡張トークン」の割当を保持できる |
@@ -41,7 +41,7 @@
 
 ### T01 拡張トークン定義と共通ユーティリティ追加
 
-- Status: `TODO`
+- Status: `DONE`
 - 目的: 専用トークンの知識を散らさず 1 箇所にまとめる
 - 作業項目:
 - 9 種の拡張トークン一覧を定義する

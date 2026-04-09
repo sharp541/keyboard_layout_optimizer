@@ -271,6 +271,27 @@ impl LogicalLayout {
         self.extension_parent_map.get(&token.as_char()).copied()
     }
 
+    pub fn clear_extensions(&mut self) {
+        self.extension_map.clear();
+        self.extension_parent_map.clear();
+    }
+
+    pub fn extension_assignments(&self) -> Vec<(usize, AzikExtensionToken)> {
+        let mut assignments = self
+            .extension_map
+            .iter()
+            .map(|(&index, &token)| (index, token))
+            .collect::<Vec<_>>();
+        assignments.sort_by_key(|(index, _)| *index);
+        assignments
+    }
+
+    pub fn hostable_extension_indices(&self) -> Vec<usize> {
+        (0..self.layout.len())
+            .filter(|&index| self.can_host_extension(index))
+            .collect()
+    }
+
     pub fn assign_default_azik_extensions(&mut self) {
         for index in 0..self.layout.len() {
             if self.extension_map.len() == AZIK_EXTENSION_TOKENS.len() {

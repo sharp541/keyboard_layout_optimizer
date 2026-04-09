@@ -1,8 +1,9 @@
 use fastrand;
 use rand::prelude::*;
 use rayon::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use crate::azik_extension::{AzikExtensionToken, AZIK_EXTENSION_TOKENS};
 use crate::keyboard_layout::{LayoutLookup, LogicalLayout, PhysicalLayout};
 use crate::n_gram::{LogicalNGram, NGramDB};
 
@@ -33,7 +34,8 @@ impl Genetic {
         ja_weight: f32,
         en_weight: f32,
     ) {
-        let initial_layout = LogicalLayout::from_usable_chars(usable_chars);
+        let mut initial_layout = LogicalLayout::from_usable_chars(usable_chars);
+        initial_layout.assign_default_azik_extensions();
         let mut best_layout = Individual::new(initial_layout.clone());
         let tri_grams = ngram_db
             .get_tri_grams_weighted_for_layout(
@@ -209,7 +211,10 @@ struct Individual {
 }
 
 impl Individual {
-    fn new(layout: LogicalLayout) -> Self {
+    fn new(mut layout: LogicalLayout) -> Self {
+        if layout.extension_assignments().is_empty() {
+            layout.assign_default_azik_extensions();
+        }
         Self { layout, score: 0.0 }
     }
 
@@ -249,21 +254,174 @@ impl Individual {
             idx = next_idx;
         }
 
-        Self::new(child_layout)
+        child_layout.clear_extensions();
+        for (index, token) in select_extension_assignments(self, other, rng) {
+            child_layout
+                .assign_extension(index, token)
+                .expect("selected extension assignments should stay valid");
+        }
+
+        let mut child = Self::new(child_layout);
+        let mut repair_rng = fastrand::Rng::new();
+        child.repair_extensions(&mut repair_rng);
+        child
     }
 
     fn random_mutation(&mut self, rng: &mut fastrand::Rng) {
-        let a = rng.usize(0..self.layout.len());
-        let b = rng.usize(0..self.layout.len());
+        let Some((a, b)) = self.pick_base_mutation_indices(rng) else {
+            return;
+        };
         self.layout.swap(a, b);
+        self.repair_extensions(rng);
+    }
+
+    fn extension_mutation(&mut self, rng: &mut fastrand::Rng) {
+        let assignments = self.layout.extension_assignments();
+        if assignments.is_empty() {
+            self.repair_extensions(rng);
+            return;
+        }
+
+        let hostable_indices = self.layout.hostable_extension_indices();
+        let occupied_indices = assignments
+            .iter()
+            .map(|(index, _)| *index)
+            .collect::<HashSet<_>>();
+        let available_indices = hostable_indices
+            .into_iter()
+            .filter(|index| !occupied_indices.contains(index))
+            .collect::<Vec<_>>();
+
+        if !available_indices.is_empty() {
+            let move_from = rng.usize(0..assignments.len());
+            let move_to = available_indices[rng.usize(0..available_indices.len())];
+            let token = assignments[move_from].1;
+            self.layout.remove_extension(assignments[move_from].0);
+            self.layout
+                .assign_extension(move_to, token)
+                .expect("moving an extension to a free host key should stay valid");
+            return;
+        }
+
+        if assignments.len() < 2 {
+            return;
+        }
+
+        let a = rng.usize(0..assignments.len());
+        let mut b = rng.usize(0..assignments.len());
+        while a == b {
+            b = rng.usize(0..assignments.len());
+        }
+
+        let first_index = assignments[a].0;
+        let second_index = assignments[b].0;
+        let assignments_to_rebuild = assignments
+            .into_iter()
+            .map(|(index, token)| {
+                if index == first_index {
+                    (second_index, token)
+                } else if index == second_index {
+                    (first_index, token)
+                } else {
+                    (index, token)
+                }
+            })
+            .collect::<Vec<_>>();
+        self.rebuild_extensions(&assignments_to_rebuild);
+    }
+
+    fn rebuild_extensions(&mut self, assignments: &[(usize, AzikExtensionToken)]) {
+        self.layout.clear_extensions();
+        for &(index, token) in assignments {
+            self.layout
+                .assign_extension(index, token)
+                .expect("extension assignments should stay valid after rebuild");
+        }
+    }
+
+    fn pick_base_mutation_indices(&self, rng: &mut fastrand::Rng) -> Option<(usize, usize)> {
+        if self.layout.len() < 2 {
+            return None;
+        }
+
+        let first = rng.usize(0..self.layout.len());
+        let mut second = rng.usize(0..self.layout.len());
+        while first == second {
+            second = rng.usize(0..self.layout.len());
+        }
+
+        Some((first, second))
+    }
+
+    fn repair_extensions(&mut self, rng: &mut fastrand::Rng) {
+        let hostable_indices = self.layout.hostable_extension_indices();
+        assert!(
+            hostable_indices.len() >= AZIK_EXTENSION_TOKENS.len(),
+            "not enough consonant keys to host all AZIK extensions"
+        );
+
+        let mut occupied = HashSet::new();
+        let mut valid_assignments = self
+            .layout
+            .extension_assignments()
+            .into_iter()
+            .filter(|(index, _)| self.layout.can_host_extension(*index) && occupied.insert(*index))
+            .collect::<Vec<_>>();
+
+        let assigned_tokens = valid_assignments
+            .iter()
+            .map(|(_, token)| *token)
+            .collect::<HashSet<_>>();
+        let mut missing_tokens = AZIK_EXTENSION_TOKENS
+            .iter()
+            .copied()
+            .filter(|token| !assigned_tokens.contains(token))
+            .collect::<Vec<_>>();
+        let mut available_indices = hostable_indices
+            .into_iter()
+            .filter(|index| !occupied.contains(index))
+            .collect::<Vec<_>>();
+
+        shuffle_slice(&mut missing_tokens, rng);
+        shuffle_slice(&mut available_indices, rng);
+
+        for (token, index) in missing_tokens
+            .into_iter()
+            .zip(available_indices.into_iter())
+        {
+            valid_assignments.push((index, token));
+        }
+
+        self.rebuild_extensions(&valid_assignments);
     }
 
     fn mutate(&mut self, rng: &mut fastrand::Rng) {
-        let mutation_type = rng.u8(0..4);
+        let mutation_type = rng.u8(0..5);
         match mutation_type {
             0 => (),
-            _ => self.random_mutation(rng),
+            1 | 2 => self.random_mutation(rng),
+            _ => self.extension_mutation(rng),
         }
+    }
+}
+
+fn select_extension_assignments(
+    left: &Individual,
+    right: &Individual,
+    rng: &mut ThreadRng,
+) -> Vec<(usize, AzikExtensionToken)> {
+    let source = if rng.gen_bool(0.5) {
+        &left.layout
+    } else {
+        &right.layout
+    };
+    source.extension_assignments()
+}
+
+fn shuffle_slice<T>(slice: &mut [T], rng: &mut fastrand::Rng) {
+    for i in (1..slice.len()).rev() {
+        let j = rng.usize(..=i);
+        slice.swap(i, j);
     }
 }
 
@@ -286,5 +444,204 @@ fn tournament_index(population: &[Individual], k: usize, rng: &mut fastrand::Rng
 impl PartialEq for Individual {
     fn eq(&self, other: &Self) -> bool {
         self.score == other.score
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::azik_extension::AzikExtensionToken;
+    use crate::keyboard_layout::Finger;
+
+    fn layout_for_tests() -> LogicalLayout {
+        LogicalLayout::from_usable_chars(&[
+            'k', 's', 't', 'n', 'h', 'm', 'y', 'r', 'w', 'z', 'd', 'g', 'b', 'p', 'f',
+        ])
+    }
+
+    fn mixed_layout_for_tests() -> LogicalLayout {
+        LogicalLayout::from_usable_chars(&[
+            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'h', 'o', 'm', 'y', 'r', 'w', 'z',
+        ])
+    }
+
+    fn weighted_physical_layout() -> PhysicalLayout {
+        let cost_matrix = std::array::from_fn(|index| index as f32 + 1.0);
+        let finger_matrix = std::array::from_fn(|_| Finger::I);
+        let mut physical_layout =
+            PhysicalLayout::new(cost_matrix, finger_matrix).expect("layout should be valid");
+        physical_layout.calculate_tri_gram_cost();
+        physical_layout
+    }
+
+    #[test]
+    fn new_individual_initializes_all_azik_extensions() {
+        let individual = Individual::new(layout_for_tests());
+
+        for token in AZIK_EXTENSION_TOKENS {
+            let index = individual
+                .layout
+                .get_extension_parent_index(token)
+                .expect("every AZIK token should be assigned");
+            assert!(individual.layout.can_host_extension(index));
+        }
+    }
+
+    #[test]
+    fn extension_mutation_preserves_base_layout_and_changes_extension_assignment() {
+        let mut individual = Individual::new(layout_for_tests());
+        let base_layout = individual.layout.output();
+        let before = individual.layout.extension_assignments();
+
+        individual.extension_mutation(&mut fastrand::Rng::with_seed(7));
+
+        assert_eq!(individual.layout.output(), base_layout);
+        let after = individual.layout.extension_assignments();
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn random_mutation_repairs_extensions_after_base_layout_changes() {
+        let mut saw_base_layout_change = false;
+        let mut saw_cross_bucket_swap = false;
+
+        for seed in 0..64 {
+            let mut individual = Individual::new(mixed_layout_for_tests());
+            let before_layout = individual.layout.output();
+            let before_extensions = individual.layout.extension_assignments();
+            let before_hostable = (0..individual.layout.len())
+                .map(|index| individual.layout.can_host_extension(index))
+                .collect::<Vec<_>>();
+
+            individual.random_mutation(&mut fastrand::Rng::with_seed(seed));
+
+            saw_base_layout_change |= individual.layout.output() != before_layout;
+            let after_hostable = (0..individual.layout.len())
+                .map(|index| individual.layout.can_host_extension(index))
+                .collect::<Vec<_>>();
+            saw_cross_bucket_swap |= before_hostable != after_hostable;
+
+            assert_eq!(
+                individual.layout.extension_assignments().len(),
+                before_extensions.len(),
+                "base mutation should preserve the number of assigned extensions"
+            );
+            for token in AZIK_EXTENSION_TOKENS {
+                let index = individual
+                    .layout
+                    .get_extension_parent_index(token)
+                    .expect("repair should keep every extension token assigned");
+                assert!(
+                    individual.layout.can_host_extension(index),
+                    "repaired extension must stay on a hostable key"
+                );
+            }
+        }
+
+        assert!(
+            saw_base_layout_change,
+            "test should exercise at least one real base-layout mutation"
+        );
+        assert!(
+            saw_cross_bucket_swap,
+            "test should exercise at least one vowel/consonant swap across extension hostability"
+        );
+    }
+
+    #[test]
+    fn extension_assignment_changes_evaluation_score() {
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                let physical_layout = weighted_physical_layout();
+                let ann = AzikExtensionToken::Ann.as_char();
+                let tri_grams = HashMap::from([(LogicalNGram::new([ann, 'k', 'k']), 1.0)]);
+
+                let mut left = layout_for_tests();
+                left.clear_extensions();
+                left.assign_extension(0, AzikExtensionToken::Ann)
+                    .expect("index 0 should host ann");
+                left.assign_extension(1, AzikExtensionToken::Inn)
+                    .expect("index 1 should host inn");
+                left.assign_extension(2, AzikExtensionToken::Unn)
+                    .expect("index 2 should host unn");
+                left.assign_extension(3, AzikExtensionToken::Enn)
+                    .expect("index 3 should host enn");
+                left.assign_extension(4, AzikExtensionToken::Onn)
+                    .expect("index 4 should host onn");
+                left.assign_extension(5, AzikExtensionToken::Ai)
+                    .expect("index 5 should host ai");
+                left.assign_extension(6, AzikExtensionToken::Uu)
+                    .expect("index 6 should host uu");
+                left.assign_extension(7, AzikExtensionToken::Ei)
+                    .expect("index 7 should host ei");
+                left.assign_extension(8, AzikExtensionToken::Ou)
+                    .expect("index 8 should host ou");
+
+                let mut right = layout_for_tests();
+                right.clear_extensions();
+                right
+                    .assign_extension(9, AzikExtensionToken::Ann)
+                    .expect("index 9 should host ann");
+                right
+                    .assign_extension(1, AzikExtensionToken::Inn)
+                    .expect("index 1 should host inn");
+                right
+                    .assign_extension(2, AzikExtensionToken::Unn)
+                    .expect("index 2 should host unn");
+                right
+                    .assign_extension(3, AzikExtensionToken::Enn)
+                    .expect("index 3 should host enn");
+                right
+                    .assign_extension(4, AzikExtensionToken::Onn)
+                    .expect("index 4 should host onn");
+                right
+                    .assign_extension(5, AzikExtensionToken::Ai)
+                    .expect("index 5 should host ai");
+                right
+                    .assign_extension(6, AzikExtensionToken::Uu)
+                    .expect("index 6 should host uu");
+                right
+                    .assign_extension(7, AzikExtensionToken::Ei)
+                    .expect("index 7 should host ei");
+                right
+                    .assign_extension(8, AzikExtensionToken::Ou)
+                    .expect("index 8 should host ou");
+
+                let left_score = left.evaluate(&physical_layout, &tri_grams);
+                let right_score = right.evaluate(&physical_layout, &tri_grams);
+
+                assert_ne!(left_score, right_score);
+            })
+            .expect("thread should spawn")
+            .join()
+            .expect("thread should finish");
+    }
+
+    #[test]
+    fn repair_extensions_restores_all_tokens_after_invalidating_a_host_key() {
+        let mut individual = Individual::new(layout_for_tests());
+        let ann_index = individual
+            .layout
+            .get_extension_parent_index(AzikExtensionToken::Ann)
+            .expect("ann should be assigned");
+        individual.layout.set(ann_index, 'a');
+
+        assert_eq!(
+            individual
+                .layout
+                .get_extension_parent_index(AzikExtensionToken::Ann),
+            None
+        );
+
+        individual.repair_extensions(&mut fastrand::Rng::with_seed(11));
+
+        for token in AZIK_EXTENSION_TOKENS {
+            let index = individual
+                .layout
+                .get_extension_parent_index(token)
+                .expect("repair should reassign every token");
+            assert!(individual.layout.can_host_extension(index));
+        }
     }
 }

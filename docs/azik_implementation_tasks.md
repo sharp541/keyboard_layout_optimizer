@@ -16,7 +16,7 @@
 | T03 | DONE | n-gram DB 生成時に source ごとの前処理を適用 | `src/n_gram.rs` | T02 | 日本語 source のみ前処理して DB 化でき、英語 source には影響しない |
 | T04 | DONE | 拡張付きキー表現の導入 | `src/keyboard_layout/logical_layout.rs` 周辺 | T01 | 通常文字配置とは別に「子音キー -> 拡張トークン」の割当を保持できる |
 | T05 | DONE | 拡張付きキーの検索・評価 API 実装 | `src/keyboard_layout/logical_layout.rs`, `src/n_gram.rs` | T04 | 専用トークンが親子音キーと同じ index/cost で評価される |
-| T06 | TODO | 遺伝的アルゴリズムに拡張割当遺伝子を追加 | `src/algorithms/genetic.rs` | T04, T05 | 通常キー配置と拡張割当を別に変異できる |
+| T06 | DONE | 遺伝的アルゴリズムに拡張割当遺伝子を追加 | `src/algorithms/genetic.rs` | T04, T05 | 通常キー配置と拡張割当を別に変異できる |
 | T07 | TODO | 交叉・突然変異戦略の分離 | `src/algorithms/genetic.rs` | T06 | 通常キーのみ入替、拡張のみ入替の両操作が存在する |
 | T08 | DONE | レイアウト出力の可読化 | `src/keyboard_layout/logical_layout.rs`, `src/main.rs` | T04 | `s(ann)` の形式で表示できる |
 | T09 | TODO | 日本語/英語の別評価と重み合成の整理 | `src/n_gram.rs`, `src/main.rs`, `src/algorithms/genetic.rs` | T03, T05 | 日本語と英語を別集合として評価し、重み付け合成できる |
@@ -107,7 +107,7 @@
 
 ### T06 遺伝的アルゴリズムに拡張割当遺伝子を追加
 
-- Status: `TODO`
+- Status: `DONE`
 - 目的: レイアウト本体と拡張割当を同時最適化できるようにする
 - 作業項目:
 - 個体表現に拡張割当を追加する

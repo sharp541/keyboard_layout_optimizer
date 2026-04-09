@@ -4,8 +4,10 @@
 使用方法:
     poetry run python python/dataset.py init  # 生データの取得と保存
     poetry run python python/dataset.py       # 加工ファイルの作成
+    poetry run python python/dataset.py analyze-diphthongs
 """
 import argparse
+from collections import Counter
 import json
 import os
 from pathlib import Path
@@ -19,6 +21,8 @@ from huggingface_hub import login
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA_DIR = SCRIPT_DIR.parent / "data"
 TOKEN_PATH = SCRIPT_DIR / ".env" / "token.json"
+VOWEL_PAIR_ORDER = tuple(first + second for first in "aeiou" for second in "aeiou")
+VOWELS = frozenset("aeiou")
 
 
 qwerty_layout = set([
@@ -42,6 +46,94 @@ def clean(text):
     # remove multiple spaces
     t = re.sub(r"\s+", " ", t)
     return t
+
+
+def extract_vowel_pairs(text):
+    """
+    テキスト中の連続する母音2文字を数える
+
+    Args:
+        text: 集計対象のテキスト
+
+    Returns:
+        母音2文字の出現回数
+    """
+    counts = Counter()
+    for first, second in zip(text, text[1:]):
+        if first in VOWELS and second in VOWELS:
+            counts[first + second] += 1
+    return counts
+
+
+def summarize_vowel_pairs(text):
+    """
+    テキスト中の母音ペア頻度を集計する
+
+    Args:
+        text: 集計対象のテキスト
+
+    Returns:
+        (集計結果, 母音ペア総数)
+    """
+    counts = extract_vowel_pairs(text)
+    ordered_counts = Counter({pair: counts.get(pair, 0) for pair in VOWEL_PAIR_ORDER})
+    return ordered_counts, sum(ordered_counts.values())
+
+
+def resolve_japanese_analysis_path(data_dir):
+    """
+    日本語分析対象ファイルのパスを解決する
+
+    Args:
+        data_dir: データディレクトリ
+
+    Returns:
+        解決済み Path
+    """
+    data_path = Path(data_dir).resolve()
+    return data_path / "ja.txt"
+
+
+def print_vowel_pair_report(name, counts, total_pairs):
+    """
+    母音ペア頻度のレポートを表示する
+
+    Args:
+        name: レポート名
+        counts: 母音ペアの出現回数
+        total_pairs: 母音ペア総数
+    """
+    print(f"[{name}]")
+    if total_pairs == 0:
+        print("母音2文字の連続は見つかりませんでした。")
+        return
+
+    print(f"total_vowel_pairs: {total_pairs}")
+    sorted_pairs = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    for pair, count in sorted_pairs:
+        ratio = count / total_pairs
+        print(f"{pair}: count={count}, ratio={ratio:.4%}")
+
+
+def analyze_diphthongs_command(data_dir=DEFAULT_DATA_DIR):
+    """
+    加工済み日本語テキストから母音ペアの頻度を分析する
+
+    Args:
+        data_dir: データディレクトリ
+    """
+    path = resolve_japanese_analysis_path(data_dir)
+
+    if not path.exists():
+        print(
+            f"エラー: {path} が見つかりません。先に 'poetry run python python/dataset.py' を実行してください。"
+        )
+        return
+
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    counts, total_pairs = summarize_vowel_pairs(text)
+    print_vowel_pair_report(path.name, counts, total_pairs)
 
 
 def sample_dataset(dataset, selector, max_size=1 * 1024 * 1024):
@@ -188,8 +280,8 @@ def main():
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["init"],
-        help="サブコマンド: init (生データの取得と保存)"
+        choices=["init", "analyze-diphthongs"],
+        help="サブコマンド: init (生データの取得と保存), analyze-diphthongs (母音ペア頻度の分析)"
     )
     parser.add_argument(
         "--data-dir",
@@ -201,6 +293,8 @@ def main():
 
     if args.command == "init":
         init_command(args.data_dir)
+    elif args.command == "analyze-diphthongs":
+        analyze_diphthongs_command(args.data_dir)
     else:
         process_command(args.data_dir)
 

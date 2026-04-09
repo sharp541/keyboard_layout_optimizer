@@ -9,4 +9,5 @@ poetry install
 poetry run python python/dataset.py --help
 poetry run python python/dataset.py init
 poetry run python python/dataset.py
+poetry run python python/dataset.py analyze-diphthongs
 ```

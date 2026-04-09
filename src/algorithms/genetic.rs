@@ -1,11 +1,17 @@
 use fastrand;
 use rand::prelude::*;
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use crate::azik_extension::{AzikExtensionToken, AZIK_EXTENSION_TOKENS};
-use crate::keyboard_layout::{LayoutLookup, LogicalLayout, PhysicalLayout};
+use crate::azik_extension::{
+    AzikExtensionToken, AZIK_EXTENSION_TOKENS, AZIK_EXTENSION_TOKEN_COUNT,
+};
+use crate::keyboard_layout::{
+    LayoutLookup, LogicalLayout, PhysicalLayout, NUM_COLS, NUM_LAYERS, NUM_ROWS,
+};
 use crate::n_gram::{LogicalNGram, NGramDB};
+
+const TOTAL_LOGICAL_KEYS: usize = NUM_COLS * NUM_ROWS * NUM_LAYERS;
 
 pub struct Genetic {
     population_size: usize,
@@ -143,7 +149,7 @@ impl Genetic {
                 *population = new_population;
 
                 // Evaluate population
-                population.par_iter_mut().for_each(|i| {
+                for i in population.iter_mut() {
                     i.score = evaluate_weighted_ids(
                         &i.layout,
                         physical_layout,
@@ -152,7 +158,7 @@ impl Genetic {
                         ja_weight,
                         en_weight,
                     );
-                });
+                }
 
                 // 完全ソートを避ける（次反復のエリート抽出は部分選択で行う）
             });
@@ -237,6 +243,9 @@ fn tri_grams_to_ids(
         .iter()
         .map(|(ng, score)| {
             let lookup = |c| {
+                if let Some(token) = AzikExtensionToken::from_char(c) {
+                    return LayoutLookup::AzikExtension(token);
+                }
                 char_to_id
                     .get(&c)
                     .copied()
@@ -289,7 +298,7 @@ impl Individual {
 
         let start = rng.gen_range(0..n);
         let mut idx = start;
-        let mut visited = vec![false; n];
+        let mut visited = [false; TOTAL_LOGICAL_KEYS];
 
         loop {
             if visited[idx] {
@@ -330,63 +339,52 @@ impl Individual {
     }
 
     fn extension_mutation(&mut self, rng: &mut fastrand::Rng) {
-        let assignments = self.layout.extension_assignments();
-        if assignments.is_empty() {
+        let Some(mut assignments) =
+            complete_extension_parent_indices(self.layout.extension_parent_indices())
+        else {
             self.repair_extensions(rng);
             return;
+        };
+
+        let mut occupied = [false; TOTAL_LOGICAL_KEYS];
+        for index in assignments {
+            occupied[index] = true;
         }
 
-        let hostable_indices = self.layout.hostable_extension_indices();
-        let occupied_indices = assignments
-            .iter()
-            .map(|(index, _)| *index)
-            .collect::<HashSet<_>>();
-        let available_indices = hostable_indices
-            .into_iter()
-            .filter(|index| !occupied_indices.contains(index))
-            .collect::<Vec<_>>();
+        let mut available_indices = [0usize; TOTAL_LOGICAL_KEYS];
+        let mut available_count = 0usize;
+        for (index, slot) in occupied.iter().enumerate().take(self.layout.len()) {
+            if self.layout.can_host_extension(index) && !*slot {
+                available_indices[available_count] = index;
+                available_count += 1;
+            }
+        }
 
-        if !available_indices.is_empty() {
-            let move_from = rng.usize(0..assignments.len());
-            let move_to = available_indices[rng.usize(0..available_indices.len())];
-            let token = assignments[move_from].1;
-            self.layout.remove_extension(assignments[move_from].0);
-            self.layout
-                .assign_extension(move_to, token)
-                .expect("moving an extension to a free host key should stay valid");
+        if available_count > 0 {
+            let move_from = rng.usize(0..AZIK_EXTENSION_TOKEN_COUNT);
+            let move_to = available_indices[rng.usize(0..available_count)];
+            assignments[move_from] = move_to;
+            self.rebuild_extensions(&assignments);
             return;
         }
 
-        if assignments.len() < 2 {
+        if AZIK_EXTENSION_TOKEN_COUNT < 2 {
             return;
         }
 
-        let a = rng.usize(0..assignments.len());
-        let mut b = rng.usize(0..assignments.len());
+        let a = rng.usize(0..AZIK_EXTENSION_TOKEN_COUNT);
+        let mut b = rng.usize(0..AZIK_EXTENSION_TOKEN_COUNT);
         while a == b {
-            b = rng.usize(0..assignments.len());
+            b = rng.usize(0..AZIK_EXTENSION_TOKEN_COUNT);
         }
-
-        let first_index = assignments[a].0;
-        let second_index = assignments[b].0;
-        let assignments_to_rebuild = assignments
-            .into_iter()
-            .map(|(index, token)| {
-                if index == first_index {
-                    (second_index, token)
-                } else if index == second_index {
-                    (first_index, token)
-                } else {
-                    (index, token)
-                }
-            })
-            .collect::<Vec<_>>();
-        self.rebuild_extensions(&assignments_to_rebuild);
+        assignments.swap(a, b);
+        self.rebuild_extensions(&assignments);
     }
 
-    fn rebuild_extensions(&mut self, assignments: &[(usize, AzikExtensionToken)]) {
+    fn rebuild_extensions(&mut self, assignments: &[usize; AZIK_EXTENSION_TOKEN_COUNT]) {
         self.layout.clear_extensions();
-        for &(index, token) in assignments {
+        for (token_index, &index) in assignments.iter().enumerate() {
+            let token = AZIK_EXTENSION_TOKENS[token_index];
             self.layout
                 .assign_extension(index, token)
                 .expect("extension assignments should stay valid after rebuild");
@@ -408,45 +406,64 @@ impl Individual {
     }
 
     fn repair_extensions(&mut self, rng: &mut fastrand::Rng) {
-        let hostable_indices = self.layout.hostable_extension_indices();
+        let mut assignments = [None; AZIK_EXTENSION_TOKEN_COUNT];
+        let mut occupied = [false; TOTAL_LOGICAL_KEYS];
+        let mut hostable_count = 0usize;
+
+        for index in 0..self.layout.len() {
+            if !self.layout.can_host_extension(index) {
+                continue;
+            }
+            hostable_count += 1;
+        }
         assert!(
-            hostable_indices.len() >= AZIK_EXTENSION_TOKENS.len(),
+            hostable_count >= AZIK_EXTENSION_TOKENS.len(),
             "not enough consonant keys to host all AZIK extensions"
         );
 
-        let mut occupied = HashSet::new();
-        let mut valid_assignments = self
+        for (token_index, parent_index) in self
             .layout
-            .extension_assignments()
-            .into_iter()
-            .filter(|(index, _)| self.layout.can_host_extension(*index) && occupied.insert(*index))
-            .collect::<Vec<_>>();
-
-        let assigned_tokens = valid_assignments
-            .iter()
-            .map(|(_, token)| *token)
-            .collect::<HashSet<_>>();
-        let mut missing_tokens = AZIK_EXTENSION_TOKENS
+            .extension_parent_indices()
             .iter()
             .copied()
-            .filter(|token| !assigned_tokens.contains(token))
-            .collect::<Vec<_>>();
-        let mut available_indices = hostable_indices
-            .into_iter()
-            .filter(|index| !occupied.contains(index))
-            .collect::<Vec<_>>();
-
-        shuffle_slice(&mut missing_tokens, rng);
-        shuffle_slice(&mut available_indices, rng);
-
-        for (token, index) in missing_tokens
-            .into_iter()
-            .zip(available_indices.into_iter())
+            .enumerate()
         {
-            valid_assignments.push((index, token));
+            if let Some(index) = parent_index {
+                if self.layout.can_host_extension(index) && !occupied[index] {
+                    assignments[token_index] = Some(index);
+                    occupied[index] = true;
+                }
+            }
         }
 
-        self.rebuild_extensions(&valid_assignments);
+        let mut missing_tokens = [0usize; AZIK_EXTENSION_TOKEN_COUNT];
+        let mut missing_count = 0usize;
+        for (token_index, assignment) in assignments.iter().enumerate() {
+            if assignment.is_none() {
+                missing_tokens[missing_count] = token_index;
+                missing_count += 1;
+            }
+        }
+
+        let mut available_indices = [0usize; TOTAL_LOGICAL_KEYS];
+        let mut available_count = 0usize;
+        for (index, slot) in occupied.iter().enumerate().take(self.layout.len()) {
+            if self.layout.can_host_extension(index) && !*slot {
+                available_indices[available_count] = index;
+                available_count += 1;
+            }
+        }
+
+        shuffle_slice(&mut missing_tokens[..missing_count], rng);
+        shuffle_slice(&mut available_indices[..available_count], rng);
+
+        for offset in 0..missing_count {
+            assignments[missing_tokens[offset]] = Some(available_indices[offset]);
+        }
+
+        let assignments = complete_extension_parent_indices(&assignments)
+            .expect("repair should restore every AZIK extension");
+        self.rebuild_extensions(&assignments);
     }
 
     fn mutate(&mut self, rng: &mut fastrand::Rng) {
@@ -464,67 +481,73 @@ fn crossover_extension_assignments(
     left: &Individual,
     right: &Individual,
     rng: &mut fastrand::Rng,
-) -> Vec<(usize, AzikExtensionToken)> {
-    let left_assignments = extension_assignment_map(left);
-    let right_assignments = extension_assignment_map(right);
-    let mut occupied_indices = HashSet::new();
-    let mut assignments = Vec::with_capacity(AZIK_EXTENSION_TOKENS.len());
-    let mut tokens = AZIK_EXTENSION_TOKENS.to_vec();
+) -> [usize; AZIK_EXTENSION_TOKEN_COUNT] {
+    let left_assignments =
+        complete_extension_parent_indices(left.layout.extension_parent_indices())
+            .expect("left parent should have complete AZIK assignments");
+    let right_assignments =
+        complete_extension_parent_indices(right.layout.extension_parent_indices())
+            .expect("right parent should have complete AZIK assignments");
+    let mut occupied_indices = [false; TOTAL_LOGICAL_KEYS];
+    let mut assignments = [None; AZIK_EXTENSION_TOKEN_COUNT];
+    let mut tokens = AZIK_EXTENSION_TOKENS;
     shuffle_slice(&mut tokens, rng);
 
     for token in tokens {
+        let token_index = token.as_usize();
         let pick_left_first = rng.u8(0..2) == 0;
         let candidate_indices = if pick_left_first {
             [
-                left_assignments.get(&token).copied(),
-                right_assignments.get(&token).copied(),
+                left_assignments[token_index],
+                right_assignments[token_index],
             ]
         } else {
             [
-                right_assignments.get(&token).copied(),
-                left_assignments.get(&token).copied(),
+                right_assignments[token_index],
+                left_assignments[token_index],
             ]
         };
 
         if let Some(index) = candidate_indices
             .into_iter()
-            .flatten()
-            .find(|index| layout.can_host_extension(*index) && !occupied_indices.contains(index))
+            .find(|&index| layout.can_host_extension(index) && !occupied_indices[index])
         {
-            occupied_indices.insert(index);
-            assignments.push((index, token));
+            occupied_indices[index] = true;
+            assignments[token_index] = Some(index);
         }
     }
 
-    let mut available_indices = layout
-        .hostable_extension_indices()
-        .into_iter()
-        .filter(|index| !occupied_indices.contains(index))
-        .collect::<Vec<_>>();
-    shuffle_slice(&mut available_indices, rng);
-
-    for token in AZIK_EXTENSION_TOKENS {
-        if assignments.iter().any(|(_, assigned)| *assigned == token) {
-            continue;
+    let mut available_indices = [0usize; TOTAL_LOGICAL_KEYS];
+    let mut available_count = 0usize;
+    for (index, slot) in occupied_indices.iter().enumerate().take(layout.len()) {
+        if layout.can_host_extension(index) && !*slot {
+            available_indices[available_count] = index;
+            available_count += 1;
         }
+    }
+    shuffle_slice(&mut available_indices[..available_count], rng);
 
-        let index = available_indices
-            .pop()
-            .expect("enough hostable keys should exist for all AZIK extensions");
-        assignments.push((index, token));
+    let mut next_available = 0usize;
+    for assignment in assignments.iter_mut().take(AZIK_EXTENSION_TOKEN_COUNT) {
+        if assignment.is_none() {
+            let index = available_indices[next_available];
+            next_available += 1;
+            *assignment = Some(index);
+        }
     }
 
-    assignments.sort_by_key(|(index, _)| *index);
-    assignments
+    complete_extension_parent_indices(&assignments)
+        .expect("crossover should assign every AZIK extension")
 }
 
-fn extension_assignment_map(individual: &Individual) -> HashMap<AzikExtensionToken, usize> {
-    individual
-        .layout
-        .extension_assignments()
-        .into_iter()
-        .map(|(index, token)| (token, index))
-        .collect()
+fn complete_extension_parent_indices(
+    assignments: &[Option<usize>; AZIK_EXTENSION_TOKEN_COUNT],
+) -> Option<[usize; AZIK_EXTENSION_TOKEN_COUNT]> {
+    let mut completed = [0usize; AZIK_EXTENSION_TOKEN_COUNT];
+    for (i, index) in assignments.iter().copied().enumerate() {
+        completed[i] = index?;
+    }
+    Some(completed)
 }
 
 fn shuffle_slice<T>(slice: &mut [T], rng: &mut fastrand::Rng) {

@@ -23,6 +23,8 @@ pub const AZIK_EXTENSION_TOKENS: [AzikExtensionToken; 9] = [
     AzikExtensionToken::Ou,
 ];
 
+pub const AZIK_EXTENSION_TOKEN_COUNT: usize = AZIK_EXTENSION_TOKENS.len();
+
 const AZIK_TOKEN_CHAR_BASE: u32 = 0xF0000;
 
 impl AzikExtensionToken {
@@ -56,6 +58,10 @@ impl AzikExtensionToken {
             Self::Ei => 7,
             Self::Ou => 8,
         }
+    }
+
+    pub const fn as_usize(self) -> usize {
+        self.as_index() as usize
     }
 
     pub fn as_char(self) -> char {

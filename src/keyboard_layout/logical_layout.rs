@@ -2,8 +2,12 @@ use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
 use super::physical_layout::{PhysicalLayout, NUM_COLS, NUM_LAYERS, NUM_ROWS};
-use crate::azik_extension::{is_consonant, AzikExtensionToken, AZIK_EXTENSION_TOKENS};
+use crate::azik_extension::{
+    is_consonant, AzikExtensionToken, AZIK_EXTENSION_TOKENS, AZIK_EXTENSION_TOKEN_COUNT,
+};
 use crate::n_gram::LogicalNGram;
+
+const TOTAL_LOGICAL_KEYS: usize = NUM_COLS * NUM_ROWS * NUM_LAYERS;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LogicalLayoutError {
@@ -28,28 +32,27 @@ pub enum LogicalLayoutError {
 pub enum LayoutLookup {
     Char(char),
     CharId(usize),
+    AzikExtension(AzikExtensionToken),
 }
 
 #[derive(Debug, Clone)]
 pub struct LogicalLayout {
-    layout: [char; NUM_COLS * NUM_ROWS * NUM_LAYERS],
+    layout: [char; TOTAL_LOGICAL_KEYS],
     char_map: HashMap<char, usize>,
     dummy_chars: HashSet<char>,
-    extension_map: HashMap<usize, AzikExtensionToken>,
-    extension_parent_map: HashMap<char, usize>,
-    // 追加: 使用文字のID割り当て（固定）、ID→現在のインデックスのO(1)配列
+    extension_by_index: [Option<AzikExtensionToken>; TOTAL_LOGICAL_KEYS],
+    extension_parent_indices: [Option<usize>; AZIK_EXTENSION_TOKEN_COUNT],
     char_to_id: HashMap<char, usize>,
     id_to_index: Vec<usize>,
 }
 
 impl LogicalLayout {
     pub fn from_usable_chars(usable_chars: &[char]) -> Self {
-        if usable_chars.len() > NUM_COLS * NUM_ROWS * NUM_LAYERS {
+        if usable_chars.len() > TOTAL_LOGICAL_KEYS {
             panic!("Too many usable characters: {}", usable_chars.len());
         }
 
-        let mut layout: [char; NUM_COLS * NUM_ROWS * NUM_LAYERS] =
-            [' '; NUM_COLS * NUM_ROWS * NUM_LAYERS];
+        let mut layout: [char; TOTAL_LOGICAL_KEYS] = [' '; TOTAL_LOGICAL_KEYS];
         let mut char_map = HashMap::new();
         let mut char_to_id = HashMap::new();
         let mut id_to_index: Vec<usize> = Vec::with_capacity(usable_chars.len());
@@ -57,7 +60,7 @@ impl LogicalLayout {
         // Fill layout with provided usable chars; if not enough, use unique dummy chars
         // Use Unicode Private Use Area starting at U+E000 to avoid collisions
         let mut dummy_counter: u32 = 0;
-        for i in 0..NUM_COLS * NUM_ROWS * NUM_LAYERS {
+        for i in 0..TOTAL_LOGICAL_KEYS {
             if i < usable_chars.len() {
                 let ch = usable_chars[i];
                 layout[i] = ch;
@@ -86,8 +89,8 @@ impl LogicalLayout {
             layout,
             char_map,
             dummy_chars,
-            extension_map: HashMap::new(),
-            extension_parent_map: HashMap::new(),
+            extension_by_index: [None; TOTAL_LOGICAL_KEYS],
+            extension_parent_indices: [None; AZIK_EXTENSION_TOKEN_COUNT],
             char_to_id,
             id_to_index,
         }
@@ -172,8 +175,8 @@ impl LogicalLayout {
     }
 
     pub fn resolve_char_index(&self, c: char) -> Option<usize> {
-        if let Some(&index) = self.extension_parent_map.get(&c) {
-            return Some(index);
+        if let Some(token) = AzikExtensionToken::from_char(c) {
+            return self.extension_parent_indices[token.as_usize()];
         }
 
         self.char_map.get(&c).copied()
@@ -184,6 +187,9 @@ impl LogicalLayout {
             .unwrap_or_else(|| match lookup {
                 LayoutLookup::Char(c) => panic!("Character {} not found", c),
                 LayoutLookup::CharId(id) => panic!("Character ID {} not found", id),
+                LayoutLookup::AzikExtension(token) => {
+                    panic!("AZIK extension token {:?} not found", token)
+                }
             })
     }
 
@@ -191,6 +197,7 @@ impl LogicalLayout {
         match lookup {
             LayoutLookup::Char(c) => self.resolve_char_index(c),
             LayoutLookup::CharId(id) => self.id_to_index.get(id).copied(),
+            LayoutLookup::AzikExtension(token) => self.extension_parent_indices[token.as_usize()],
         }
     }
 
@@ -219,7 +226,7 @@ impl LogicalLayout {
         self.char_map.len()
     }
 
-    pub fn output(&self) -> [char; NUM_COLS * NUM_ROWS * NUM_LAYERS] {
+    pub fn output(&self) -> [char; TOTAL_LOGICAL_KEYS] {
         self.layout
     }
 
@@ -237,50 +244,52 @@ impl LogicalLayout {
             return Err(LogicalLayoutError::KeyCannotHostExtension { index, base_char });
         }
 
-        if let Some(existing) = self.extension_map.get(&index) {
+        if let Some(existing) = self.extension_by_index[index] {
             return Err(LogicalLayoutError::KeyAlreadyHasExtension {
                 index,
-                token: *existing,
+                token: existing,
             });
         }
 
-        let token_char = token.as_char();
-        if let Some(&existing_index) = self.extension_parent_map.get(&token_char) {
+        if let Some(existing_index) = self.extension_parent_indices[token.as_usize()] {
             return Err(LogicalLayoutError::ExtensionAlreadyAssigned {
                 token,
                 index: existing_index,
             });
         }
 
-        self.extension_map.insert(index, token);
-        self.extension_parent_map.insert(token_char, index);
+        self.extension_by_index[index] = Some(token);
+        self.extension_parent_indices[token.as_usize()] = Some(index);
         Ok(())
     }
 
     pub fn remove_extension(&mut self, index: usize) -> Option<AzikExtensionToken> {
-        let token = self.extension_map.remove(&index)?;
-        self.extension_parent_map.remove(&token.as_char());
+        let token = self.extension_by_index[index].take()?;
+        self.extension_parent_indices[token.as_usize()] = None;
         Some(token)
     }
 
     pub fn get_extension(&self, index: usize) -> Option<AzikExtensionToken> {
-        self.extension_map.get(&index).copied()
+        self.extension_by_index.get(index).copied().flatten()
     }
 
     pub fn get_extension_parent_index(&self, token: AzikExtensionToken) -> Option<usize> {
-        self.extension_parent_map.get(&token.as_char()).copied()
+        self.extension_parent_indices[token.as_usize()]
     }
 
     pub fn clear_extensions(&mut self) {
-        self.extension_map.clear();
-        self.extension_parent_map.clear();
+        self.extension_by_index.fill(None);
+        self.extension_parent_indices.fill(None);
     }
 
     pub fn extension_assignments(&self) -> Vec<(usize, AzikExtensionToken)> {
         let mut assignments = self
-            .extension_map
+            .extension_parent_indices
             .iter()
-            .map(|(&index, &token)| (index, token))
+            .enumerate()
+            .filter_map(|(token_index, index)| {
+                index.map(|index| (index, AZIK_EXTENSION_TOKENS[token_index]))
+            })
             .collect::<Vec<_>>();
         assignments.sort_by_key(|(index, _)| *index);
         assignments
@@ -292,25 +301,31 @@ impl LogicalLayout {
             .collect()
     }
 
+    pub fn extension_parent_indices(&self) -> &[Option<usize>; AZIK_EXTENSION_TOKEN_COUNT] {
+        &self.extension_parent_indices
+    }
+
     pub fn assign_default_azik_extensions(&mut self) {
+        let mut assigned_count = 0usize;
         for index in 0..self.layout.len() {
-            if self.extension_map.len() == AZIK_EXTENSION_TOKENS.len() {
+            if assigned_count == AZIK_EXTENSION_TOKENS.len() {
                 break;
             }
-            if !self.can_host_extension(index) || self.extension_map.contains_key(&index) {
+            if !self.can_host_extension(index) || self.extension_by_index[index].is_some() {
                 continue;
             }
 
             let Some(token) = AZIK_EXTENSION_TOKENS
                 .iter()
                 .copied()
-                .find(|token| !self.extension_parent_map.contains_key(&token.as_char()))
+                .find(|token| self.extension_parent_indices[token.as_usize()].is_none())
             else {
                 break;
             };
 
             self.assign_extension(index, token)
                 .expect("default AZIK extension assignment should stay valid");
+            assigned_count += 1;
         }
     }
 
@@ -328,7 +343,7 @@ impl LogicalLayout {
         }
 
         let mut label = ch.to_string();
-        if let Some(token) = self.extension_map.get(&index) {
+        if let Some(token) = self.extension_by_index[index] {
             label.push('(');
             label.push_str(token.label());
             label.push(')');
@@ -395,7 +410,7 @@ impl LogicalLayout {
         tri_grams_ids: &[([LayoutLookup; 3], f32)],
     ) -> f32 {
         tri_grams_ids
-            .par_iter()
+            .iter()
             .map(|(ids, score)| {
                 let k1 = self.resolve_lookup_or_panic(ids[0], "evaluate_ids", None);
                 let k2 = self.resolve_lookup_or_panic(ids[1], "evaluate_ids", None);
@@ -423,6 +438,12 @@ impl LogicalLayout {
                 (LayoutLookup::CharId(id), None) => {
                     panic!("{context}: unresolved character id {id}")
                 }
+                (LayoutLookup::AzikExtension(token), Some(n_gram)) => {
+                    panic!("{context}: unresolved AZIK extension {token:?} in tri-gram {n_gram:?}")
+                }
+                (LayoutLookup::AzikExtension(token), None) => {
+                    panic!("{context}: unresolved AZIK extension {token:?}")
+                }
             })
     }
 
@@ -431,8 +452,8 @@ impl LogicalLayout {
             return;
         }
 
-        if let Some(token) = self.extension_map.remove(&index) {
-            self.extension_parent_map.remove(&token.as_char());
+        if let Some(token) = self.extension_by_index[index].take() {
+            self.extension_parent_indices[token.as_usize()] = None;
         }
     }
 }
@@ -570,6 +591,10 @@ mod tests {
             layout.get_char_index('k')
         );
         assert_eq!(
+            layout.resolve_lookup(LayoutLookup::AzikExtension(AzikExtensionToken::Ann)),
+            layout.get_char_index('k')
+        );
+        assert_eq!(
             layout.resolve_lookup(LayoutLookup::CharId(
                 *layout.get_char_to_id().get(&'s').expect("id should exist")
             )),
@@ -596,7 +621,7 @@ mod tests {
                         LayoutLookup::CharId(
                             *layout.get_char_to_id().get(&'k').expect("id should exist"),
                         ),
-                        LayoutLookup::Char(ann),
+                        LayoutLookup::AzikExtension(AzikExtensionToken::Ann),
                         LayoutLookup::CharId(
                             *layout.get_char_to_id().get(&'s').expect("id should exist"),
                         ),
@@ -636,7 +661,7 @@ mod tests {
                         LayoutLookup::CharId(
                             *layout.get_char_to_id().get(&'k').expect("id should exist"),
                         ),
-                        LayoutLookup::Char(ann),
+                        LayoutLookup::AzikExtension(AzikExtensionToken::Ann),
                         LayoutLookup::CharId(
                             *layout.get_char_to_id().get(&'s').expect("id should exist"),
                         ),
@@ -656,8 +681,8 @@ mod tests {
                 })
                 .expect_err("evaluate_ids should fail fast on unresolved extension");
                 let evaluate_ids_message = panic_message(&evaluate_ids_err);
-                assert!(evaluate_ids_message.contains("evaluate_ids: unresolved character"));
-                assert!(evaluate_ids_message.contains(&format!("{ann:?}")));
+                assert!(evaluate_ids_message.contains("evaluate_ids: unresolved AZIK extension"));
+                assert!(evaluate_ids_message.contains("Ann"));
             })
             .expect("thread should spawn")
             .join()

@@ -550,6 +550,7 @@ mod tests {
     use super::*;
     use crate::azik_extension::AzikExtensionToken;
     use crate::keyboard_layout::Finger;
+    use std::collections::HashSet;
 
     fn layout_for_tests() -> LogicalLayout {
         LogicalLayout::from_usable_chars(&[
@@ -572,17 +573,33 @@ mod tests {
         physical_layout
     }
 
+    fn assert_valid_extension_assignments(layout: &LogicalLayout) {
+        let assignments = layout.extension_assignments();
+        let assigned_indices: HashSet<usize> =
+            assignments.iter().map(|(index, _)| *index).collect();
+        let assigned_tokens: HashSet<AzikExtensionToken> =
+            assignments.iter().map(|(_, token)| *token).collect();
+
+        assert_eq!(assignments.len(), AZIK_EXTENSION_TOKENS.len());
+        assert_eq!(assigned_indices.len(), AZIK_EXTENSION_TOKENS.len());
+        assert_eq!(
+            assigned_tokens,
+            AZIK_EXTENSION_TOKENS.iter().copied().collect()
+        );
+
+        for token in AZIK_EXTENSION_TOKENS {
+            let index = layout
+                .get_extension_parent_index(token)
+                .expect("every AZIK token should be assigned exactly once");
+            assert!(layout.can_host_extension(index));
+        }
+    }
+
     #[test]
     fn new_individual_initializes_all_azik_extensions() {
         let individual = Individual::new(layout_for_tests());
 
-        for token in AZIK_EXTENSION_TOKENS {
-            let index = individual
-                .layout
-                .get_extension_parent_index(token)
-                .expect("every AZIK token should be assigned");
-            assert!(individual.layout.can_host_extension(index));
-        }
+        assert_valid_extension_assignments(&individual.layout);
     }
 
     #[test]
@@ -596,6 +613,7 @@ mod tests {
         assert_eq!(individual.layout.output(), base_layout);
         let after = individual.layout.extension_assignments();
         assert_ne!(before, after);
+        assert_valid_extension_assignments(&individual.layout);
     }
 
     #[test]
@@ -624,16 +642,7 @@ mod tests {
                 before_extensions.len(),
                 "base mutation should preserve the number of assigned extensions"
             );
-            for token in AZIK_EXTENSION_TOKENS {
-                let index = individual
-                    .layout
-                    .get_extension_parent_index(token)
-                    .expect("repair should keep every extension token assigned");
-                assert!(
-                    individual.layout.can_host_extension(index),
-                    "repaired extension must stay on a hostable key"
-                );
-            }
+            assert_valid_extension_assignments(&individual.layout);
         }
 
         assert!(
@@ -761,13 +770,7 @@ mod tests {
             let child = left.base_crossover(&right, &mut rng);
             saw_base_change |= child.layout.output() != before_base;
             assert_eq!(child.layout.extension_assignments(), before_extensions);
-            for token in AZIK_EXTENSION_TOKENS {
-                let index = child
-                    .layout
-                    .get_extension_parent_index(token)
-                    .expect("base crossover should preserve all extension assignments");
-                assert!(child.layout.can_host_extension(index));
-            }
+            assert_valid_extension_assignments(&child.layout);
         }
 
         assert!(
@@ -816,13 +819,7 @@ mod tests {
 
         assert_eq!(child.layout.output(), before_base);
         assert_ne!(child.layout.extension_assignments(), before_extensions);
-        for token in AZIK_EXTENSION_TOKENS {
-            let index = child
-                .layout
-                .get_extension_parent_index(token)
-                .expect("extension crossover should keep every token assigned");
-            assert!(child.layout.can_host_extension(index));
-        }
+        assert_valid_extension_assignments(&child.layout);
     }
 
     #[test]
@@ -843,13 +840,7 @@ mod tests {
 
         individual.repair_extensions(&mut fastrand::Rng::with_seed(11));
 
-        for token in AZIK_EXTENSION_TOKENS {
-            let index = individual
-                .layout
-                .get_extension_parent_index(token)
-                .expect("repair should reassign every token");
-            assert!(individual.layout.can_host_extension(index));
-        }
+        assert_valid_extension_assignments(&individual.layout);
     }
 
     #[test]

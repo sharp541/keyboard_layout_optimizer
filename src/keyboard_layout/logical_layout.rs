@@ -441,6 +441,7 @@ impl LogicalLayout {
 mod tests {
     use super::*;
     use crate::azik_extension::is_azik_extension_token;
+    use std::collections::HashSet;
 
     fn test_physical_layout() -> PhysicalLayout {
         let cost_matrix = [1.0; NUM_COLS * NUM_ROWS];
@@ -688,6 +689,28 @@ mod tests {
             assert!(layout.can_host_extension(index));
             assert_eq!(layout.resolve_char_index(token.as_char()), Some(index));
         }
+    }
+
+    #[test]
+    fn default_azik_extensions_assign_each_token_and_parent_once() {
+        let mut layout = LogicalLayout::from_usable_chars(&[
+            'k', 'a', 's', 'i', 't', 'u', 'n', 'e', 'h', 'o', 'm', 'y', 'r', 'w', 'z',
+        ]);
+
+        layout.assign_default_azik_extensions();
+
+        let assignments = layout.extension_assignments();
+        let assigned_indices: HashSet<usize> =
+            assignments.iter().map(|(index, _)| *index).collect();
+        let assigned_tokens: HashSet<AzikExtensionToken> =
+            assignments.iter().map(|(_, token)| *token).collect();
+
+        assert_eq!(assignments.len(), AZIK_EXTENSION_TOKENS.len());
+        assert_eq!(assigned_indices.len(), AZIK_EXTENSION_TOKENS.len());
+        assert_eq!(
+            assigned_tokens,
+            AZIK_EXTENSION_TOKENS.iter().copied().collect()
+        );
     }
 
     #[test]

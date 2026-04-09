@@ -82,4 +82,22 @@ mod tests {
             )
         );
     }
+
+    #[test]
+    fn preprocesses_every_supported_token_only_after_plain_consonants() {
+        for token in AZIK_EXTENSION_TOKENS {
+            let pattern = token.pattern();
+            let expected = format!("k{}", token.as_char());
+
+            assert_eq!(
+                preprocess_japanese_romanization(&format!("k{pattern}")),
+                expected
+            );
+            assert_eq!(preprocess_japanese_romanization(pattern), pattern);
+            assert_eq!(
+                preprocess_japanese_romanization(&format!("a{pattern}")),
+                format!("a{pattern}")
+            );
+        }
+    }
 }

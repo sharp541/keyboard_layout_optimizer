@@ -20,7 +20,7 @@
 | T07 | DONE | 交叉・突然変異戦略の分離 | `src/algorithms/genetic.rs` | T06 | 通常キーのみ入替、拡張のみ入替の両操作が存在する |
 | T08 | DONE | レイアウト出力の可読化 | `src/keyboard_layout/logical_layout.rs`, `src/main.rs` | T04 | `s(ann)` の形式で表示できる |
 | T09 | DONE | 日本語/英語の別評価と重み合成の整理 | `src/n_gram.rs`, `src/main.rs`, `src/algorithms/genetic.rs` | T03, T05 | 日本語と英語を別集合として評価し、重み付け合成できる |
-| T10 | TODO | 単体テスト追加 | `src/n_gram.rs`, `src/keyboard_layout/logical_layout.rs`, `src/algorithms/genetic.rs` | T02-T09 | 前処理、評価、制約、表示をテストで固定できる |
+| T10 | DONE | 単体テスト追加 | `src/n_gram.rs`, `src/keyboard_layout/logical_layout.rs`, `src/algorithms/genetic.rs` | T02-T09 | 前処理、評価、制約、表示をテストで固定できる |
 | T11 | TODO | 統合確認とリファクタ | `src/main.rs`, 必要箇所 | T10 | `cargo test`, `cargo check`, 必要なら `cargo fmt --all` が通る |
 
 ## 推奨実装順
@@ -156,7 +156,7 @@
 
 ### T10 単体テスト追加
 
-- Status: `TODO`
+- Status: `DONE`
 - 目的: 前処理と制約の仕様を回帰防止する
 - 作業項目:
 - 前処理テスト
@@ -164,6 +164,7 @@
 - 専用トークンの index 解決テスト
 - レイアウト表示テスト
 - 必要なら GA の突然変異制約テスト
+- Note: 前処理の全トークン網羅、既定拡張割当の一意性、GA 操作後の割当不変条件をテストで固定した
 - 完了条件:
 - 主要仕様がテストで固定される
 

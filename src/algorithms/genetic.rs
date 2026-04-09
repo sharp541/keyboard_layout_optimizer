@@ -12,6 +12,8 @@ use crate::keyboard_layout::{
 use crate::n_gram::{LogicalNGram, NGramDB};
 
 const TOTAL_LOGICAL_KEYS: usize = NUM_COLS * NUM_ROWS * NUM_LAYERS;
+const MIGRATION_INTERVAL: usize = 100;
+const MIGRATION_PAIRS_PER_EVENT: usize = 2;
 
 pub struct Genetic {
     population_size: usize,
@@ -180,31 +182,22 @@ impl Genetic {
                 }
             }
 
-            // migrate best individuals
-            if i % 10 == 0 {
+            // migrate random non-elite individuals
+            if i % MIGRATION_INTERVAL == 0 {
                 for idx in 0..islands.len() {
-                    // 各島の最良個体（最小スコア）を取得
-                    let best_individual = islands[idx]
-                        .iter()
-                        .min_by(|a, b| {
-                            a.score
-                                .partial_cmp(&b.score)
-                                .expect("Failed to compare scores")
-                        })
-                        .cloned()
-                        .expect("Island population should not be empty");
                     let next_idx = (idx + 1) % islands.len();
-                    let next_population = &mut islands[next_idx];
-                    // 次島の最悪個体（最大スコア）を置換
-                    if let Some((worst_idx, _)) =
-                        next_population.iter().enumerate().max_by(|(_, a), (_, b)| {
-                            a.score
-                                .partial_cmp(&b.score)
-                                .expect("Failed to compare scores")
-                        })
-                    {
-                        next_population[worst_idx] = best_individual;
+                    if idx >= next_idx {
+                        continue;
                     }
+                    let (left, right) = islands.split_at_mut(next_idx);
+                    let population = &mut left[idx];
+                    let next_population = &mut right[0];
+                    exchange_random_pairs(
+                        population,
+                        next_population,
+                        elite_num,
+                        MIGRATION_PAIRS_PER_EVENT,
+                    );
                 }
             }
 
@@ -554,6 +547,31 @@ fn diversify_population(
             en_weight,
         );
         *slot = diversified;
+    }
+}
+
+fn exchange_random_pairs(
+    left_population: &mut [Individual],
+    right_population: &mut [Individual],
+    elite_num: usize,
+    pair_count: usize,
+) {
+    if left_population.len() <= elite_num || right_population.len() <= elite_num {
+        return;
+    }
+
+    let mut rng = fastrand::Rng::new();
+    let exchange_count = pair_count
+        .min(left_population.len() - elite_num)
+        .min(right_population.len() - elite_num);
+
+    for _ in 0..exchange_count {
+        let left_idx = elite_num + rng.usize(0..(left_population.len() - elite_num));
+        let right_idx = elite_num + rng.usize(0..(right_population.len() - elite_num));
+        std::mem::swap(
+            &mut left_population[left_idx],
+            &mut right_population[right_idx],
+        );
     }
 }
 

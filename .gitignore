@@ -37,3 +37,6 @@ python/.env
 # poetry virtualenv
 .venv/
 .poetry-cache/
+
+# Python cache
+python/__pycache__/

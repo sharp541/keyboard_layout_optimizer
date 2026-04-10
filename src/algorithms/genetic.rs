@@ -780,19 +780,22 @@ mod tests {
             .assign_extension(5, AzikExtensionToken::Ou)
             .expect("ou should be assignable");
         layout
-            .assign_extension(6, AzikExtensionToken::Ai)
+            .assign_extension(6, AzikExtensionToken::Aa)
+            .expect("aa should be assignable");
+        layout
+            .assign_extension(7, AzikExtensionToken::Ai)
             .expect("ai should be assignable");
         layout
-            .assign_extension(7, AzikExtensionToken::Ei)
+            .assign_extension(8, AzikExtensionToken::Ei)
             .expect("ei should be assignable");
         layout
-            .assign_extension(8, AzikExtensionToken::Oi)
+            .assign_extension(9, AzikExtensionToken::Oi)
             .expect("oi should be assignable");
         layout
-            .assign_extension(9, AzikExtensionToken::Uu)
+            .assign_extension(10, AzikExtensionToken::Uu)
             .expect("uu should be assignable");
         layout
-            .assign_extension(10, AzikExtensionToken::Oo)
+            .assign_extension(11, AzikExtensionToken::Oo)
             .expect("oo should be assignable");
     }
 
@@ -871,7 +874,7 @@ mod tests {
 
                 let mut right = layout_for_tests();
                 right.clear_extensions();
-                assign_test_extensions(&mut right, 11);
+                assign_test_extensions(&mut right, 12);
 
                 let left_score = left.evaluate(&physical_layout, &tri_grams);
                 let right_score = right.evaluate(&physical_layout, &tri_grams);
@@ -916,7 +919,7 @@ mod tests {
         let left = Individual::new(layout_for_tests());
         let mut right_layout = layout_for_tests();
         right_layout.clear_extensions();
-        assign_test_extensions(&mut right_layout, 11);
+        assign_test_extensions(&mut right_layout, 12);
         let right = Individual::new(right_layout);
 
         let before_base = left.layout.output();

@@ -23,6 +23,7 @@ DEFAULT_DATA_DIR = SCRIPT_DIR.parent / "data"
 TOKEN_PATH = SCRIPT_DIR / ".env" / "token.json"
 VOWEL_PAIR_ORDER = tuple(first + second for first in "aeiou" for second in "aeiou")
 VOWELS = frozenset("aeiou")
+NN_PATTERN_ORDER = ("ann", "inn", "unn", "enn", "onn")
 
 
 qwerty_layout = set([
@@ -80,6 +81,39 @@ def summarize_vowel_pairs(text):
     return ordered_counts, sum(ordered_counts.values())
 
 
+def extract_nn_patterns(text):
+    """
+    テキスト中の指定3文字パターンを数える
+
+    Args:
+        text: 集計対象のテキスト
+
+    Returns:
+        指定3文字パターンの出現回数
+    """
+    counts = Counter()
+    for i in range(len(text) - 2):
+        token = text[i:i + 3]
+        if token in NN_PATTERN_ORDER:
+            counts[token] += 1
+    return counts
+
+
+def summarize_nn_patterns(text):
+    """
+    テキスト中の指定3文字パターン頻度を集計する
+
+    Args:
+        text: 集計対象のテキスト
+
+    Returns:
+        (集計結果, 指定3文字パターン総数)
+    """
+    counts = extract_nn_patterns(text)
+    ordered_counts = Counter({pattern: counts.get(pattern, 0) for pattern in NN_PATTERN_ORDER})
+    return ordered_counts, sum(ordered_counts.values())
+
+
 def resolve_japanese_analysis_path(data_dir):
     """
     日本語分析対象ファイルのパスを解決する
@@ -115,6 +149,27 @@ def print_vowel_pair_report(name, counts, total_pairs):
         print(f"{pair}: count={count}, ratio={ratio:.4%}")
 
 
+def print_nn_pattern_report(name, counts, total_patterns):
+    """
+    指定3文字パターン頻度のレポートを表示する
+
+    Args:
+        name: レポート名
+        counts: 指定3文字パターンの出現回数
+        total_patterns: 指定3文字パターン総数
+    """
+    print(f"[{name} nn-patterns]")
+    if total_patterns == 0:
+        print("指定した3文字パターンは見つかりませんでした。")
+        return
+
+    print(f"total_nn_patterns: {total_patterns}")
+    sorted_patterns = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    for pattern, count in sorted_patterns:
+        ratio = count / total_patterns
+        print(f"{pattern}: count={count}, ratio={ratio:.4%}")
+
+
 def analyze_diphthongs_command(data_dir=DEFAULT_DATA_DIR):
     """
     加工済み日本語テキストから母音ペアの頻度を分析する
@@ -132,8 +187,11 @@ def analyze_diphthongs_command(data_dir=DEFAULT_DATA_DIR):
 
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
-    counts, total_pairs = summarize_vowel_pairs(text)
-    print_vowel_pair_report(path.name, counts, total_pairs)
+    pair_counts, total_pairs = summarize_vowel_pairs(text)
+    print_vowel_pair_report(path.name, pair_counts, total_pairs)
+    print()
+    nn_counts, total_patterns = summarize_nn_patterns(text)
+    print_nn_pattern_report(path.name, nn_counts, total_patterns)
 
 
 def sample_dataset(dataset, selector, max_size=1 * 1024 * 1024):

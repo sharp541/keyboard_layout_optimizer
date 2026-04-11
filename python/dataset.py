@@ -51,24 +51,24 @@ def clean(text):
 
 def extract_vowel_pairs(text):
     """
-    テキスト中の連続する母音2文字を数える
+    テキスト中の「子音の後に続く母音2文字」を数える
 
     Args:
         text: 集計対象のテキスト
 
     Returns:
-        母音2文字の出現回数
+        子音の後に続く母音2文字の出現回数
     """
     counts = Counter()
-    for first, second in zip(text, text[1:]):
-        if first in VOWELS and second in VOWELS:
+    for prev_char, first, second in zip(text, text[1:], text[2:]):
+        if prev_char.isalpha() and prev_char not in VOWELS and first in VOWELS and second in VOWELS:
             counts[first + second] += 1
     return counts
 
 
 def summarize_vowel_pairs(text):
     """
-    テキスト中の母音ペア頻度を集計する
+    テキスト中の「子音の後に続く母音ペア」頻度を集計する
 
     Args:
         text: 集計対象のテキスト
@@ -130,7 +130,7 @@ def resolve_japanese_analysis_path(data_dir):
 
 def print_vowel_pair_report(name, counts, total_pairs):
     """
-    母音ペア頻度のレポートを表示する
+    子音の後に続く母音ペア頻度のレポートを表示する
 
     Args:
         name: レポート名
@@ -139,7 +139,7 @@ def print_vowel_pair_report(name, counts, total_pairs):
     """
     print(f"[{name}]")
     if total_pairs == 0:
-        print("母音2文字の連続は見つかりませんでした。")
+        print("子音の後に続く母音2文字の連続は見つかりませんでした。")
         return
 
     print(f"total_vowel_pairs: {total_pairs}")
@@ -172,7 +172,7 @@ def print_nn_pattern_report(name, counts, total_patterns):
 
 def analyze_diphthongs_command(data_dir=DEFAULT_DATA_DIR):
     """
-    加工済み日本語テキストから母音ペアの頻度を分析する
+    加工済み日本語テキストから子音後の母音ペア頻度を分析する
 
     Args:
         data_dir: データディレクトリ

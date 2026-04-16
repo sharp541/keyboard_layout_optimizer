@@ -60,7 +60,7 @@ mod tests {
     #[test]
     fn does_not_replace_without_preceding_plain_consonant() {
         assert_eq!(preprocess_japanese_romanization("ann"), "ann");
-        assert_eq!(preprocess_japanese_romanization("aa"), "aa");
+        assert_eq!(preprocess_japanese_romanization("ui"), "ui");
         assert_eq!(preprocess_japanese_romanization("aou"), "aou");
         assert_eq!(preprocess_japanese_romanization("ooi"), "ooi");
         assert_eq!(
@@ -84,7 +84,7 @@ mod tests {
             )
         );
         assert_eq!(
-            preprocess_japanese_romanization("soitoo"),
+            preprocess_japanese_romanization("soitao"),
             format!(
                 "s{}t{}",
                 AzikExtensionToken::Oi.as_char(),
@@ -92,7 +92,7 @@ mod tests {
             )
         );
         assert_eq!(
-            preprocess_japanese_romanization("kaatai"),
+            preprocess_japanese_romanization("kuitai"),
             format!(
                 "k{}t{}",
                 AzikExtensionToken::Aa.as_char(),

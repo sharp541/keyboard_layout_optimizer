@@ -42,12 +42,12 @@ impl AzikExtensionToken {
             Self::Enn => "enn",
             Self::Onn => "onn",
             Self::Ou => "ou",
-            Self::Aa => "aa",
+            Self::Aa => "ui",
             Self::Ai => "ai",
             Self::Ei => "ei",
             Self::Oi => "oi",
             Self::Uu => "uu",
-            Self::Oo => "oo",
+            Self::Oo => "ao",
         }
     }
 
@@ -107,12 +107,12 @@ impl AzikExtensionToken {
             "enn" => Some(Self::Enn),
             "onn" => Some(Self::Onn),
             "ou" => Some(Self::Ou),
-            "aa" => Some(Self::Aa),
+            "ui" => Some(Self::Aa),
             "ai" => Some(Self::Ai),
             "ei" => Some(Self::Ei),
             "oi" => Some(Self::Oi),
             "uu" => Some(Self::Uu),
-            "oo" => Some(Self::Oo),
+            "ao" => Some(Self::Oo),
             _ => None,
         }
     }

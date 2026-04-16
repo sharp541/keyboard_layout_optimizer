@@ -781,7 +781,7 @@ mod tests {
             .expect("ou should be assignable");
         layout
             .assign_extension(6, AzikExtensionToken::Aa)
-            .expect("aa should be assignable");
+            .expect("ui should be assignable");
         layout
             .assign_extension(7, AzikExtensionToken::Ai)
             .expect("ai should be assignable");
@@ -796,7 +796,7 @@ mod tests {
             .expect("uu should be assignable");
         layout
             .assign_extension(11, AzikExtensionToken::Oo)
-            .expect("oo should be assignable");
+            .expect("ao should be assignable");
     }
 
     #[test]

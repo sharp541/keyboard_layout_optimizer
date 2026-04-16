@@ -80,9 +80,9 @@ fn main() -> Result<(), std::io::Error> {
     );
 
     let cost_table: [f32; NUM_COLS * NUM_ROWS] = [
-        2.2, 1.0, 1.0, 2.8, 10e10, 10e10, 2.8, 1.0, 1.02, 2.2, // upper row
-        1.3, 1.0, 1.0, 1.0, 2.5, 2.5, 1.0, 1.0, 1.0, 1.3, // middle row
-        10e10, 10e10, 10e10, 1.6, 10e10, 10e10, 1.6, 10e10, 10e10, 10e10, // lower row
+        1.3, 1.0, 1.0, 2.8, 10e10, 10e10, 2.8, 1.0, 1.0, 1.3, // upper row
+        1.4, 1.1, 1.2, 1.0, 2.5, 2.5, 1.0, 1.2, 1.1, 1.4, // middle row
+        10e10, 10e10, 10e10, 2.0, 10e10, 10e10, 2.0, 10e10, 10e10, 10e10, // lower row
     ];
     let finger_table: [F; NUM_COLS * NUM_ROWS] = [
         F::R,

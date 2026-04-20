@@ -2,6 +2,10 @@ pub const NUM_ROWS: usize = 3;
 pub const NUM_COLS: usize = 10;
 pub const NUM_LAYERS: usize = 2;
 const TOTAL_KEYS: usize = NUM_ROWS * NUM_COLS * NUM_LAYERS;
+const REVERSE_ROLL_PENALTY: f32 = 8.0;
+const PINKY_ROLL_PENALTY: f32 = 8.0;
+const LAYER_CHANGE_PENALTY: f32 = 16.0;
+const MIDDLE_FINGER_ROW_PENALTY: f32 = 4.0;
 
 use super::hand_model::Hand;
 use crate::keyboard_layout::Finger;
@@ -16,10 +20,13 @@ struct KeyLocation {
 impl KeyLocation {
     pub fn new(index: usize) -> Self {
         let layer = index / (NUM_COLS * NUM_ROWS);
-        // let row = (index % (NUM_COLS * NUM_ROWS)) / NUM_COLS;
         let col = index % NUM_COLS;
         let index = index % (NUM_COLS * NUM_ROWS);
         KeyLocation { col, layer, index }
+    }
+
+    pub fn row(&self) -> usize {
+        self.index / NUM_COLS
     }
 
     pub fn hand(&self) -> Hand {
@@ -88,20 +95,47 @@ impl PhysicalLayout {
         (same_column + finger_cost) as f32
     }
 
+    fn middle_finger_row_penalty_for_fingers(
+        finger1: &Finger,
+        row1: usize,
+        finger2: &Finger,
+        row2: usize,
+    ) -> f32 {
+        if finger1.same(&Finger::M) && !finger2.same(&Finger::M) && row1 > row2 {
+            return MIDDLE_FINGER_ROW_PENALTY;
+        }
+
+        if finger2.same(&Finger::M) && !finger1.same(&Finger::M) && row2 > row1 {
+            return MIDDLE_FINGER_ROW_PENALTY;
+        }
+
+        0.0
+    }
+
+    fn middle_finger_row_penalty(&self, key1: &KeyLocation, key2: &KeyLocation) -> f32 {
+        Self::middle_finger_row_penalty_for_fingers(
+            self.finger(key1.index),
+            key1.row(),
+            self.finger(key2.index),
+            key2.row(),
+        )
+    }
+
     fn roll_cost(&self, keys: &[KeyLocation]) -> f32 {
         let mut ret = 0.0;
         for i in 0..keys.len() - 1 {
             let finger1 = &self.finger_matrix[keys[i].index];
             let finger2 = &self.finger_matrix[keys[i + 1].index];
             if finger1 <= finger2 {
-                ret += 8.0;
+                ret += REVERSE_ROLL_PENALTY;
             }
             if finger1.same(&Finger::P) {
-                ret += 8.0;
+                ret += PINKY_ROLL_PENALTY;
             }
             if keys[i].layer != keys[i + 1].layer {
-                ret += 16.0;
+                ret += LAYER_CHANGE_PENALTY;
             }
+            ret += self.middle_finger_row_penalty(&keys[i], &keys[i + 1]);
         }
         ret
     }
@@ -180,4 +214,37 @@ pub fn get_right_keys() -> Vec<usize> {
         }
     }
     keys
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn middle_finger_row_penalty_is_added_when_middle_finger_is_lower() {
+        assert_eq!(
+            PhysicalLayout::middle_finger_row_penalty_for_fingers(&Finger::M, 2, &Finger::R, 0),
+            MIDDLE_FINGER_ROW_PENALTY
+        );
+        assert_eq!(
+            PhysicalLayout::middle_finger_row_penalty_for_fingers(&Finger::R, 0, &Finger::M, 2),
+            MIDDLE_FINGER_ROW_PENALTY
+        );
+    }
+
+    #[test]
+    fn middle_finger_row_penalty_is_not_added_for_same_or_higher_rows() {
+        assert_eq!(
+            PhysicalLayout::middle_finger_row_penalty_for_fingers(&Finger::M, 0, &Finger::R, 2),
+            0.0
+        );
+        assert_eq!(
+            PhysicalLayout::middle_finger_row_penalty_for_fingers(&Finger::M, 1, &Finger::R, 1),
+            0.0
+        );
+        assert_eq!(
+            PhysicalLayout::middle_finger_row_penalty_for_fingers(&Finger::M, 1, &Finger::M, 0),
+            0.0
+        );
+    }
 }

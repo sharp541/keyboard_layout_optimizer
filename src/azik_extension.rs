@@ -6,27 +6,21 @@ pub enum AzikExtensionToken {
     Enn,
     Onn,
     Ou,
-    Aa,
     Ai,
     Ei,
-    Oi,
     Uu,
-    Oo,
 }
 
-pub const AZIK_EXTENSION_TOKENS: [AzikExtensionToken; 12] = [
+pub const AZIK_EXTENSION_TOKENS: [AzikExtensionToken; 9] = [
     AzikExtensionToken::Ann,
     AzikExtensionToken::Inn,
     AzikExtensionToken::Unn,
     AzikExtensionToken::Enn,
     AzikExtensionToken::Onn,
     AzikExtensionToken::Ou,
-    AzikExtensionToken::Aa,
     AzikExtensionToken::Ai,
     AzikExtensionToken::Ei,
-    AzikExtensionToken::Oi,
     AzikExtensionToken::Uu,
-    AzikExtensionToken::Oo,
 ];
 
 pub const AZIK_EXTENSION_TOKEN_COUNT: usize = AZIK_EXTENSION_TOKENS.len();
@@ -42,12 +36,9 @@ impl AzikExtensionToken {
             Self::Enn => "enn",
             Self::Onn => "onn",
             Self::Ou => "ou",
-            Self::Aa => "ui",
             Self::Ai => "ai",
             Self::Ei => "ei",
-            Self::Oi => "oi",
             Self::Uu => "uu",
-            Self::Oo => "ao",
         }
     }
 
@@ -63,12 +54,9 @@ impl AzikExtensionToken {
             Self::Enn => 3,
             Self::Onn => 4,
             Self::Ou => 5,
-            Self::Aa => 6,
-            Self::Ai => 7,
-            Self::Ei => 8,
-            Self::Oi => 9,
-            Self::Uu => 10,
-            Self::Oo => 11,
+            Self::Ai => 6,
+            Self::Ei => 7,
+            Self::Uu => 8,
         }
     }
 
@@ -89,12 +77,9 @@ impl AzikExtensionToken {
             x if x == AZIK_TOKEN_CHAR_BASE + 3 => Some(Self::Enn),
             x if x == AZIK_TOKEN_CHAR_BASE + 4 => Some(Self::Onn),
             x if x == AZIK_TOKEN_CHAR_BASE + 5 => Some(Self::Ou),
-            x if x == AZIK_TOKEN_CHAR_BASE + 6 => Some(Self::Aa),
-            x if x == AZIK_TOKEN_CHAR_BASE + 7 => Some(Self::Ai),
-            x if x == AZIK_TOKEN_CHAR_BASE + 8 => Some(Self::Ei),
-            x if x == AZIK_TOKEN_CHAR_BASE + 9 => Some(Self::Oi),
-            x if x == AZIK_TOKEN_CHAR_BASE + 10 => Some(Self::Uu),
-            x if x == AZIK_TOKEN_CHAR_BASE + 11 => Some(Self::Oo),
+            x if x == AZIK_TOKEN_CHAR_BASE + 6 => Some(Self::Ai),
+            x if x == AZIK_TOKEN_CHAR_BASE + 7 => Some(Self::Ei),
+            x if x == AZIK_TOKEN_CHAR_BASE + 8 => Some(Self::Uu),
             _ => None,
         }
     }
@@ -107,12 +92,9 @@ impl AzikExtensionToken {
             "enn" => Some(Self::Enn),
             "onn" => Some(Self::Onn),
             "ou" => Some(Self::Ou),
-            "ui" => Some(Self::Aa),
             "ai" => Some(Self::Ai),
             "ei" => Some(Self::Ei),
-            "oi" => Some(Self::Oi),
             "uu" => Some(Self::Uu),
-            "ao" => Some(Self::Oo),
             _ => None,
         }
     }
@@ -145,7 +127,7 @@ mod tests {
 
     #[test]
     fn azik_extension_tokens_are_defined_once() {
-        assert_eq!(AZIK_EXTENSION_TOKENS.len(), 12);
+        assert_eq!(AZIK_EXTENSION_TOKENS.len(), 9);
 
         let unique_chars: HashSet<char> = AZIK_EXTENSION_TOKENS
             .iter()

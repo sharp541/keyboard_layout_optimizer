@@ -780,23 +780,14 @@ mod tests {
             .assign_extension(5, AzikExtensionToken::Ou)
             .expect("ou should be assignable");
         layout
-            .assign_extension(6, AzikExtensionToken::Aa)
-            .expect("ui should be assignable");
-        layout
-            .assign_extension(7, AzikExtensionToken::Ai)
+            .assign_extension(6, AzikExtensionToken::Ai)
             .expect("ai should be assignable");
         layout
-            .assign_extension(8, AzikExtensionToken::Ei)
+            .assign_extension(7, AzikExtensionToken::Ei)
             .expect("ei should be assignable");
         layout
-            .assign_extension(9, AzikExtensionToken::Oi)
-            .expect("oi should be assignable");
-        layout
-            .assign_extension(10, AzikExtensionToken::Uu)
+            .assign_extension(8, AzikExtensionToken::Uu)
             .expect("uu should be assignable");
-        layout
-            .assign_extension(11, AzikExtensionToken::Oo)
-            .expect("ao should be assignable");
     }
 
     #[test]
@@ -956,7 +947,7 @@ mod tests {
     fn repair_extensions_restores_layer_zero_capacity_before_reassigning_tokens() {
         let mut individual = Individual::new(layout_for_tests());
 
-        for index in 0..4 {
+        for index in 0..5 {
             individual.layout.swap(index, NUM_COLS * NUM_ROWS + index);
         }
 

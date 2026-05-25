@@ -84,18 +84,10 @@ mod tests {
             )
         );
         assert_eq!(
-            preprocess_japanese_romanization("soitao"),
-            format!(
-                "s{}t{}",
-                AzikExtensionToken::Oi.as_char(),
-                AzikExtensionToken::Oo.as_char()
-            )
-        );
-        assert_eq!(
-            preprocess_japanese_romanization("kuitai"),
+            preprocess_japanese_romanization("kuutai"),
             format!(
                 "k{}t{}",
-                AzikExtensionToken::Aa.as_char(),
+                AzikExtensionToken::Uu.as_char(),
                 AzikExtensionToken::Ai.as_char()
             )
         );
